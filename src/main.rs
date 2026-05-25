@@ -118,11 +118,8 @@ async fn student_home(tmpl: web::Data<Tera>, session: Session) -> impl Responder
     };
 
     let mut ctx = Context::new();
-    ctx.insert("role_name", "Lecturer");
-    ctx.insert("username_label", "Email");
-    ctx.insert("action_url", "/lecturer/home");
-    let rendered = tmpl.render("login.html", &ctx).unwrap();
-
+    ctx.insert("display_name", &user.display_name);
+    let rendered = tmpl.render("student_home.html", &ctx).unwrap();
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
@@ -170,13 +167,6 @@ async fn student_dashboard(tmpl: web::Data<Tera>) -> impl Responder {
     ctx.insert("due_dates", &due_dates);
 
     let rendered = tmpl.render("student/dashboard.html", &ctx).unwrap();
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-async fn student_home(tmpl: web::Data<Tera>) -> impl Responder {
-    let ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    let rendered = tmpl.render("student_home.html", &ctx).unwrap();
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
@@ -247,9 +237,12 @@ async fn main() -> std::io::Result<()> {
 
             // Public Routes
             .route("/", web::get().to(index))
-            .route("/login/student", web::get().to(student_login_page))
-            .route("/login/lecturer", web::get().to(lecturer_login_page))
-            .route("/login/admin", web::get().to(admin_login_page))
+            // .route("/login/student", web::get().to(student_login_page))
+            // .route("/login/lecturer", web::get().to(lecturer_login_page))
+            // .route("/login/admin", web::get().to(admin_login_page))
+            .route("/login/{role}", web::get().to(auth::login_page))
+            .route("/login/{role}", web::post().to(auth::login_submit))
+            .route("/logout", web::post().to(auth::logout))
 
             // Student Routes
             .route("/student/dashboard", web::get().to(student_dashboard))
@@ -257,12 +250,7 @@ async fn main() -> std::io::Result<()> {
             // .route("/student/assignments", web::get().to(student_assignments))
             // .route("/student/grades", web::get().to(student_grades))
             // .route("/student/annoucement", web::get().to(student_annoucement))
-
-
-            .route("/login/{role}", web::get().to(auth::login_page))
-            .route("/login/{role}", web::post().to(auth::login_submit))
-            .route("/logout", web::post().to(auth::logout))
-            .route("/student/home", web::get().to(student_home))
+            .route("/student/home", web::get().to(student_home)) //to be removed
 
             // Lecturer Routes
             .route("/lecturer/home", web::get().to(lecturer_home))

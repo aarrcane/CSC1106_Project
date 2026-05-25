@@ -52,7 +52,7 @@ impl UserRole {
 
     pub fn home_path(self) -> &'static str {
         match self {
-            Self::Student => "/student/home",
+            Self::Student => "/student/dashboard",
             Self::Lecturer => "/lecturer/home",
             Self::Admin => "/admin/home",
         }
