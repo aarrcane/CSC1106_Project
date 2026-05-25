@@ -14,33 +14,21 @@
         <div class="card shadow-sm p-4">
           <h2 class="text-center mb-4">{{ role_name }} Login</h2>
 
-          <!-- uncomment the below once user authentication is implemented -->
+          {% if has_error %}
+          <div class="alert alert-danger" role="alert">
+            {{ error_message }}
+          </div>
+          {% endif %}
 
-          <!-- <form method="post" action="{{ action_url }}">
+          <form method="post" action="{{ action_url }}">
             <div class="mb-3">
               <label class="form-label">{{ username_label }}</label>
-              <input type="text" name="username" class="form-control" required>
+              <input type="email" name="email" class="form-control" value="{{ email_value }}" required>
             </div>
 
             <div class="mb-3">
               <label class="form-label">Password</label>
               <input type="password" name="password" class="form-control" required>
-            </div>
-
-            <button type="submit" class="btn btn-primary w-100">Login</button>
-          </form> -->
-
-          <!-- delete the below once user authentication is implemented -->
-
-          <form method="get" action="{{ action_url }}">
-            <div class="mb-3">
-              <label class="form-label">{{ username_label }}</label>
-              <input type="text" name="username" class="form-control">
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label">Password</label>
-              <input type="password" name="password" class="form-control">
             </div>
 
             <button type="submit" class="btn btn-primary w-100">Login</button>
