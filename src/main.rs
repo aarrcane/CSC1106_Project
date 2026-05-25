@@ -23,6 +23,44 @@ struct CreateStudent {
     age: Option<i32>,
 }
 
+#[derive(Serialize)]
+struct CourseContext {
+    id: i32,
+    code: String,
+    name: String,
+    trimester: String,
+    image_url: String,
+    pinned: bool,
+    ongoing: bool,
+    progress: i32,     //0-100%
+    lecturer: String,
+    attendance_pct: i32,   //0-100%
+}
+
+#[derive(Serialize)]
+struct AnnouncementContext {
+    title: String,
+    course: String,
+    date: String,
+}
+
+#[derive(Serialize)]
+struct DueDateContext {
+    title: String,
+    course: String,
+    #[serde(rename = "type")]
+    item_type: String, // "quiz" or "assignment"
+    due_date: String,
+    urgent: bool,
+}
+
+#[derive(Serialize)]
+struct NotificationContext {
+    icon_class: String,
+    text: String,
+    sub_text: String,
+}
+
 async fn get_students(db: web::Data<PgPool>) -> impl Responder {
     let result = sqlx::query_as::<_, Student>(
         "SELECT id, name, email, age FROM students ORDER BY id"
@@ -136,6 +174,43 @@ async fn admin_login_page(tmpl: web::Data<Tera>) -> impl Responder {
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+async fn student_dashboard(tmpl: web::Data<Tera>) -> impl Responder {
+    let mut ctx = Context::new();
+
+    let notifications: Vec<NotificationContext> = vec![];
+    ctx.insert("notifications", &notifications);
+
+    // TODO: Replace with session-based user lookup
+    ctx.insert("student_name", "Lee Zhi Yu");
+    ctx.insert("student_id", "2501129");
+    ctx.insert("current_trimester", "2025/26 Trimester 3");
+    ctx.insert("current_date", "Monday, 25 May 2026");
+
+    // TODO: Replace with DB query: SELECT COUNT(*) FROM enrollments(?) WHERE student_id = ?
+    ctx.insert("enrolled_course_count", &3);
+    ctx.insert("avg_grade", &78);
+    ctx.insert("attendance_pct", &91);
+    ctx.insert("upcoming_deadlines", &2);
+
+    // Sidebar active page highlight
+    ctx.insert("active_page", "dashboard");
+
+    let courses: Vec<CourseContext> = vec![];
+    ctx.insert("courses", &courses);
+
+    let trimesters: Vec<String> = vec![];
+    ctx.insert("trimesters", &trimesters);
+
+    let announcements: Vec<AnnouncementContext> = vec![];
+    ctx.insert("announcements", &announcements);
+
+    let due_dates: Vec<DueDateContext> = vec![];
+    ctx.insert("due_dates", &due_dates);
+
+    let rendered = tmpl.render("student/dashboard.html", &ctx).unwrap();
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
 async fn student_home(tmpl: web::Data<Tera>) -> impl Responder {
     let ctx = Context::new();
     let rendered = tmpl.render("student_home.html", &ctx).unwrap();
@@ -174,14 +249,30 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(pool.clone()))
+
+            //Static Files (CSS, JS, images)
             .service(Files::new("/static", "./static"))
+
+            // Public Routes
             .route("/", web::get().to(index))
             .route("/login/student", web::get().to(student_login_page))
             .route("/login/lecturer", web::get().to(lecturer_login_page))
             .route("/login/admin", web::get().to(admin_login_page))
-            .route("/student/home", web::get().to(student_home))
+
+            // Student Routes
+            .route("/student/dashboard", web::get().to(student_dashboard))
+            // .route("/student/courses", web::get().to(student_courses))
+            // .route("/student/assignments", web::get().to(student_assignments))
+            // .route("/student/grades", web::get().to(student_grades))
+            // .route("/student/annoucement", web::get().to(student_annoucement))
+
+            // Lecturer Routes
             .route("/lecturer/home", web::get().to(lecturer_home))
+
+            // Admin Routes
             .route("/admin/home", web::get().to(admin_home))
+
+            // API Routes (JSON)
             .route("/api/students", web::get().to(get_students))
             .route("/api/students", web::post().to(create_student))
     })

@@ -1,0 +1,104 @@
+<!-- ─────────────────────────────────────────────────────
+     Partial: sidebar_student.html
+     Included by base_student.html.
+     Requires Tera context:
+       - active_page (String)  e.g. "dashboard", "courses",
+                               "assignments", "grades",
+                               "attendance", "quizzes",
+                               "forum", "profile", "settings"
+───────────────────────────────────────────────────── -->
+<aside class="lms-sidebar" id="sidebar">
+  <nav class="pt-2">
+    <ul class="nav flex-column">
+
+      <!-- MAIN section -->
+      <li class="sidebar-divider">Main</li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'dashboard' %}active{% endif %}"
+           href="/student/dashboard">
+          <i class="bi bi-speedometer2"></i>
+          <span>Dashboard</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'courses' %}active{% endif %}"
+           href="/student/courses">
+          <i class="bi bi-book"></i>
+          <span>My Courses</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'assignments' %}active{% endif %}"
+           href="/student/assignments">
+          <i class="bi bi-file-earmark-text"></i>
+          <span>Assignments</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'quizzes' %}active{% endif %}"
+           href="/student/quizzes">
+          <i class="bi bi-patch-question"></i>
+          <span>Quizzes</span>
+        </a>
+      </li>
+
+      <!-- ACADEMIC section -->
+      <li class="sidebar-divider">Academic</li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'grades' %}active{% endif %}"
+           href="/student/grades">
+          <i class="bi bi-bar-chart-line"></i>
+          <span>Grades</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'attendance' %}active{% endif %}"
+           href="/student/attendance">
+          <i class="bi bi-calendar-check"></i>
+          <span>Attendance</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'forum' %}active{% endif %}"
+           href="/student/forum">
+          <i class="bi bi-chat-square-text"></i>
+          <span>Discussion Forum</span>
+        </a>
+      </li>
+
+      <!-- ACCOUNT section -->
+      <li class="sidebar-divider">Account</li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'profile' %}active{% endif %}"
+           href="/student/profile">
+          <i class="bi bi-person-circle"></i>
+          <span>Profile</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'settings' %}active{% endif %}"
+           href="/student/settings">
+          <i class="bi bi-gear"></i>
+          <span>Settings</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link text-danger-emphasis" href="/logout">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </a>
+      </li>
+
+    </ul>
+  </nav>
+</aside>

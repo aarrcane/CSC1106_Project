@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{# ─────────────────────────────────────────────────────
+   base_student.html
+   Role-specific base for all STUDENT pages.
+   Extends base.html and fills in the student sidebar.
+   All student pages should extend THIS file, not base.html.
+
+   Usage in any student page:
+     {% extends "base_student.html" %}
+     {% block title %}Page Title{% endblock %}
+     {% block content %}
+       ... page content here ...
+     {% endblock %}
+───────────────────────────────────────────────────── #}
+
+{% block sidebar %}
+  {% include "partials/sidebar_student.html" %}
+{% endblock %}
