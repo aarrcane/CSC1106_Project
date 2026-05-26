@@ -1,0 +1,200 @@
+{% extends "base_admin.html" %}
+
+{% block title %}Admin Dashboard – LMS Portal{% endblock %}
+
+{% block content %}
+
+  <!-- Welcome Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Welcome back, {{ display_name }} 👋</h4>
+      <p class="text-muted small mb-0">Admin Portal</p>
+    </div>
+  </div>
+
+  <!-- ── Stats Row ── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-primary-subtle text-primary">
+            <i class="bi bi-person-badge-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ students_count | default(value=0) }}</div>
+            <div class="stat-label">Students</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-success-subtle text-success">
+            <i class="bi bi-person-workspace"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ lecturers_count | default(value=0) }}</div>
+            <div class="stat-label">Lecturers</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-warning-subtle text-warning">
+            <i class="bi bi-journal-bookmark"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ courses_count | default(value=0) }}</div>
+            <div class="stat-label">Courses</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-danger-subtle text-danger">
+            <i class="bi bi-people"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ enrollments_count | default(value=0) }}</div>
+            <div class="stat-label">Enrollments</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Content Previews + Site Logs ── -->
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-card-text me-2 text-warning"></i>Content Previews</h6>
+          <a href="/admin/content" class="btn btn-outline-secondary btn-sm">Open Content</a>
+        </div>
+        <div class="list-group list-group-flush">
+          {% for preview in content_previews %}
+          <div class="list-group-item px-4 py-3">
+            <div class="d-flex align-items-start justify-content-between gap-3">
+              <div>
+                <div class="small text-uppercase text-muted mb-1">{{ preview.kind }}</div>
+                <h6 class="fw-semibold mb-1">{{ preview.title }}</h6>
+                <p class="small text-muted mb-2">{{ preview.snippet }}</p>
+                <div class="small text-muted">By {{ preview.author }}</div>
+              </div>
+              <span class="badge bg-light text-dark border">{{ preview.when }}</span>
+            </div>
+          </div>
+          {% endfor %}
+          {% if content_previews | length == 0 %}
+          <div class="list-group-item px-4 py-3 text-muted small">No content previews available.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-kanban-fill me-2 text-secondary"></i>Site Logs</h6>
+          <a href="/admin/audit" class="btn btn-outline-secondary btn-sm">View Logs</a>
+        </div>
+        <ul class="list-group list-group-flush">
+          {% for act in recent_activity %}
+          <li class="list-group-item px-4 py-3">
+            <div class="small">
+              <strong>{{ act.who }}</strong> {{ act.action }} <span class="text-muted">· {{ act.when }}</span>
+            </div>
+          </li>
+          {% endfor %}
+          {% if recent_activity | length == 0 %}
+          <li class="list-group-item px-4 py-3 text-muted small">No recent activity.</li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── System Summary ── -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom py-3 px-4">
+      <h6 class="fw-bold mb-0"><i class="bi bi-graph-up me-2 text-success"></i>System Summary</h6>
+    </div>
+    <div class="card-body px-4 py-3">
+      <div class="row">
+        <div class="col-12 col-lg-6 mb-3">
+          <h6 class="small text-muted">User Distribution</h6>
+          <canvas id="usersPie" style="max-height:260px;"></canvas>
+        </div>
+        <div class="col-12 col-lg-6 mb-3">
+          <h6 class="small text-muted">Enrollments (last 6 months)</h6>
+          <canvas id="enrollmentsLine" style="max-height:260px;"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block extra_js %}
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script>
+    // Read counts from template context (fallback to 0)
+    const students = {{ students_count | default(value=0) }};
+    const lecturers = {{ lecturers_count | default(value=0) }};
+    const admins = {{ admins_count | default(value=0) }};
+    const enrollments = {{ enrollments_count | default(value=0) }};
+
+    // Pie chart for user distribution
+    const usersCtx = document.getElementById('usersPie');
+    if (usersCtx) {
+      new Chart(usersCtx, {
+        type: 'pie',
+        data: {
+          labels: ['Students','Lecturers','Admins'],
+          datasets: [{
+            data: [students, lecturers, admins],
+            backgroundColor: ['#0d6efd','#198754','#6c757d']
+          }]
+        },
+        options: { plugins: { legend: { position: 'bottom' } } }
+      });
+    }
+
+    // Line chart for enrollments (simple generated data based on total enrollments)
+    const enrollCtx = document.getElementById('enrollmentsLine');
+    if (enrollCtx) {
+      // Generate simple monthly data by splitting total into decreasing values
+      const total = enrollments;
+      const months = ['-5','-4','-3','-2','-1','Now'];
+      const values = [
+        Math.round(total * 0.10),
+        Math.round(total * 0.15),
+        Math.round(total * 0.18),
+        Math.round(total * 0.20),
+        Math.round(total * 0.22),
+        Math.round(total * 0.15)
+      ];
+      new Chart(enrollCtx, {
+        type: 'line',
+        data: {
+          labels: months,
+          datasets: [{
+            label: 'Enrollments',
+            data: values,
+            borderColor: '#0d6efd',
+            backgroundColor: 'rgba(13,110,253,0.08)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+  </script>
+{% endblock %}

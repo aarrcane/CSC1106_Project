@@ -178,7 +178,7 @@ async fn admin_login_page(tmpl: web::Data<Tera>) -> impl Responder {
     let mut ctx = Context::new();
     ctx.insert("role_name", "Admin");
     ctx.insert("username_label", "Email");
-    ctx.insert("action_url", "/admin/home");
+    ctx.insert("action_url", "/login/admin");
     let rendered = tmpl.render("login.html", &ctx).unwrap();
 
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -601,8 +601,182 @@ async fn admin_home(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     };
 
     let mut ctx = Context::new();
+    // Provide display name used in admin template
     ctx.insert("display_name", &user.display_name);
-    let rendered = tmpl.render("admin_home.html", &ctx).unwrap();
+    // Navbar expects these student-specific variables; provide admin-friendly values
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    // No notifications for now
+    let notifications: Vec<NotificationContext> = vec![];
+    ctx.insert("notifications", &notifications);
+    // Highlight active sidebar item
+    ctx.insert("active_page", "dashboard");
+    // Mark template as admin so shared partials can adapt
+    ctx.insert("is_admin", &true);
+    // Admin dashboard counts (hardcoded for now). Replace with DB queries in future.
+    ctx.insert("students_count", &1240);
+    ctx.insert("lecturers_count", &85);
+    ctx.insert("courses_count", &42);
+    ctx.insert("enrollments_count", &3120);
+    ctx.insert("admins_count", &3);
+    // Recent activity placeholder list (hardcoded sample events)
+    #[derive(Serialize)]
+    struct Activity {
+        who: String,
+        action: String,
+        when: String,
+    }
+    let recent_activity: Vec<Activity> = vec![
+        Activity { who: "alice@student.test".into(), action: "created student account".into(), when: "10m ago".into() },
+        Activity { who: "bob@lecturer.test".into(), action: "published announcement".into(), when: "30m ago".into() },
+        Activity { who: "system".into(), action: "daily enrollment sync".into(), when: "1h ago".into() },
+    ];
+    ctx.insert("recent_activity", &recent_activity);
+
+    // Content preview cards (hardcoded for now; replace with DB query later)
+    #[derive(Serialize)]
+    struct ContentPreview {
+        author: String,
+        kind: String,
+        title: String,
+        snippet: String,
+        when: String,
+    }
+    let content_previews: Vec<ContentPreview> = vec![
+        ContentPreview {
+            author: "Dr. Tan Wei Ming".into(),
+            kind: "Announcement".into(),
+            title: "Assignment 2 brief released".into(),
+            snippet: "The brief for Assignment 2 is now available. Students should review the submission requirements and deadline.".into(),
+            when: "24 May 2026".into(),
+        },
+        ContentPreview {
+            author: "Aisha Rahman".into(),
+            kind: "Forum Post".into(),
+            title: "Questions about lab setup".into(),
+            snippet: "Has anyone managed to configure the local environment on Windows without Docker issues?".into(),
+            when: "23 May 2026".into(),
+        },
+        ContentPreview {
+            author: "Mr. Lim".into(),
+            kind: "Uploaded Material".into(),
+            title: "Week 8 lecture slides".into(),
+            snippet: "Slides for the upcoming lecture have been uploaded and include examples for the revision session.".into(),
+            when: "22 May 2026".into(),
+        },
+    ];
+    ctx.insert("content_previews", &content_previews);
+
+    let rendered = match tmpl.render("admin/dashboard.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_users_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "users");
+    ctx.insert("is_admin", &true);
+
+    let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "courses");
+    ctx.insert("is_admin", &true);
+
+    let rendered = match tmpl.render("admin/course_administration.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_content_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "content");
+    ctx.insert("is_admin", &true);
+
+    let rendered = match tmpl.render("admin/content_oversight.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_settings_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "settings");
+    ctx.insert("is_admin", &true);
+
+    let rendered = match tmpl.render("admin/global_settings.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "audit");
+    ctx.insert("is_admin", &true);
+
+    let rendered = match tmpl.render("admin/security_audit.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
@@ -667,6 +841,11 @@ async fn main() -> std::io::Result<()> {
             // Admin Routes
             .route("/admin/home", web::get().to(admin_home))
             .route("/admin/login", web::get().to(admin_login_page))
+            .route("/admin/users", web::get().to(admin_users_page))
+            .route("/admin/courses", web::get().to(admin_courses_page))
+            .route("/admin/content", web::get().to(admin_content_page))
+            .route("/admin/settings", web::get().to(admin_settings_page))
+            .route("/admin/audit", web::get().to(admin_audit_page))
 
             // API Routes (JSON)
             .route("/api/students", web::get().to(get_students))

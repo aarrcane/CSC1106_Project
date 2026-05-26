@@ -1,0 +1,68 @@
+<!-- Partial: sidebar_admin.html
+		 Included by base_admin.html.
+		 Requires Tera context: active_page (String) e.g. "dashboard", "users", "courses", "announcements", "logs", "settings", "profile"
+-->
+<aside class="lms-sidebar" id="sidebar">
+	<nav class="pt-2">
+		<ul class="nav flex-column">
+
+			<li class="sidebar-divider">Main</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'dashboard' %}active{% endif %}"
+					 href="/admin/home">
+					<i class="bi bi-speedometer2"></i>
+					<span>Dashboard</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'users' %}active{% endif %}"
+					 href="/admin/users">
+					<i class="bi bi-people"></i>
+					<span>User Management</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'courses' %}active{% endif %}"
+					 href="/admin/courses">
+					<i class="bi bi-journal-bookmark"></i>
+					<span>Course Administration</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'content' %}active{% endif %}"
+					 href="/admin/content">
+					<i class="bi bi-megaphone"></i>
+					<span>Content Oversight</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'settings' %}active{% endif %}"
+					 href="/admin/settings">
+					<i class="bi bi-gear"></i>
+					<span>Global Settings</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'audit' %}active{% endif %}"
+					 href="/admin/audit">
+					<i class="bi bi-shield-lock"></i>
+					<span>Security Audit</span>
+				</a>
+			</li>
+
+			<li class="nav-item mt-3">
+				<a class="nav-link lms-nav-link text-danger-emphasis" href="/logout">
+					<i class="bi bi-box-arrow-right"></i>
+					<span>Logout</span>
+				</a>
+			</li>
+
+		</ul>
+	</nav>
+</aside>
