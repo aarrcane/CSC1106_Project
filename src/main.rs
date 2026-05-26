@@ -509,7 +509,7 @@ async fn student_grades(tmpl: web::Data<Tera>, session: Session) -> impl Respond
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn student_annoucement(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn student_announcement(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
         Err(response) => return response,
@@ -574,7 +574,7 @@ async fn student_annoucement(tmpl: web::Data<Tera>, session: Session) -> impl Re
     ];
     ctx.insert("announcements", &announcements);
 
-    let rendered = match tmpl.render("student/annoucement.html", &ctx) {
+    let rendered = match tmpl.render("student/announcement.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
@@ -658,7 +658,7 @@ async fn main() -> std::io::Result<()> {
             .route("/student/courses", web::get().to(student_courses))
             .route("/student/assignments", web::get().to(student_assignments))
             .route("/student/grades", web::get().to(student_grades))
-            .route("/student/annoucement", web::get().to(student_annoucement))
+            .route("/student/announcement", web::get().to(student_announcement))
             .route("/student/home", web::get().to(student_home)) //to be removed
 
             // Lecturer Routes
