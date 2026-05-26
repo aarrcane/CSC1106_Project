@@ -1,0 +1,168 @@
+{% extends "base_student.html" %}
+
+{% block title %}Grades – LMS Portal{% endblock %}
+
+{#
+  Context required:
+    - student_name, student_id, notifications, active_page (= "grades")
+    - overall_avg:    i32   (0–100)
+    - highest_grade:  i32
+    - at_risk_count:  i32   (courses below 60%)
+    - course_grades:  Vec<CourseGradeContext>
+        fields: code, name, overall (f32), grade_letter (String)
+                items: Vec<GradeItemContext>
+                    fields: title, item_type ("assignment"|"quiz"|"exam"),
+                            score (f32), max_score (f32), weight (f32)
+#}
+
+{% block content %}
+
+  <!-- Page Header -->
+  <div class="mb-4">
+    <h4 class="fw-bold mb-0">My Grades</h4>
+    <p class="text-muted small mb-0">Academic performance overview</p>
+  </div>
+
+  <!-- ── Summary Stat Cards ── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-primary-subtle text-primary">
+            <i class="bi bi-star-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ overall_avg }}%</div>
+            <div class="stat-label">Overall Average</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-success-subtle text-success">
+            <i class="bi bi-trophy-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ highest_grade }}%</div>
+            <div class="stat-label">Highest Grade</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-warning-subtle text-warning">
+            <i class="bi bi-book-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ course_grades | length }}</div>
+            <div class="stat-label">Courses Tracked</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-danger-subtle text-danger">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ at_risk_count }}</div>
+            <div class="stat-label">At Risk (&lt;60%)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Per-Course Breakdown ── -->
+  {% for cg in course_grades %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+      <div>
+        <span class="course-code me-2">{{ cg.code }}</span>
+        <span class="fw-semibold text-dark">{{ cg.name }}</span>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <div class="text-end">
+          <div class="fw-bold fs-5 {% if cg.overall >= 80 %}text-success{% elif cg.overall >= 60 %}text-warning{% else %}text-danger{% endif %}">
+            {{ cg.overall }}%
+          </div>
+          <div class="small text-muted">{{ cg.grade_letter }}</div>
+        </div>
+        <div class="progress" style="width:80px; height:8px; border-radius:4px;">
+          <div class="progress-bar {% if cg.overall >= 80 %}bg-success{% elif cg.overall >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
+               style="width: {{ cg.overall }}%;">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="px-4 py-2 small text-muted">Component</th>
+              <th class="small text-muted">Type</th>
+              <th class="small text-muted">Score</th>
+              <th class="small text-muted">Weight</th>
+              <th class="small text-muted" style="min-width:180px;">Distribution</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in cg.items %}
+            {% set pct = item.score / item.max_score * 100 %}
+            <tr>
+              <td class="px-4 fw-semibold small">{{ item.title }}</td>
+              <td>
+                <span class="badge rounded-pill
+                  {% if item.item_type == 'quiz' %}bg-info-subtle text-info
+                  {% elif item.item_type == 'exam' %}bg-danger-subtle text-danger
+                  {% else %}bg-secondary-subtle text-secondary{% endif %}">
+                  <i class="bi
+                    {% if item.item_type == 'quiz' %}bi-patch-question
+                    {% elif item.item_type == 'exam' %}bi-journal-text
+                    {% else %}bi-file-earmark-text{% endif %} me-1"></i>
+                  {% if item.item_type == 'quiz' %}Quiz
+                  {% elif item.item_type == 'exam' %}Exam
+                  {% else %}Assignment{% endif %}
+                </span>
+              </td>
+              <td class="small fw-semibold">{{ item.score }} / {{ item.max_score }}</td>
+              <td class="small text-muted">{{ item.weight }}%</td>
+              <td>
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress flex-grow-1" style="height:6px; border-radius:3px;">
+                    <div class="progress-bar
+                      {% if pct >= 80 %}bg-success{% elif pct >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
+                      style="width: {{ pct }}%;">
+                    </div>
+                  </div>
+                  <span class="small text-muted" style="width:38px; text-align:right;">
+                    {{ pct | round }}%
+                  </span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% if course_grades | length == 0 %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-bar-chart-line fs-1 d-block mb-2 opacity-25"></i>
+      No grade data available yet.
+    </div>
+  </div>
+  {% endif %}
+
+{% endblock %}

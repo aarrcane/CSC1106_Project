@@ -1,0 +1,250 @@
+{% extends "base_student.html" %}
+
+{% block title %}Assignments – LMS Portal{% endblock %}
+
+{#
+  Context required:
+    - student_name, student_id, notifications, active_page (= "assignments")
+    - courses:     Vec<CourseContext>
+    - assignments: Vec<AssignmentContext>
+        fields: id, title, course_code, course_name, item_type ("assignment"|"quiz"),
+                due_date, status ("pending"|"submitted"|"late"|"graded"),
+                score (Option<String> e.g. "85 / 100"), urgent (bool)
+#}
+
+{% block content %}
+
+  <!-- Page Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Assignments &amp; Quizzes</h4>
+      <p class="text-muted small mb-0">Track your pending and completed work</p>
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm mb-4">
+
+    <!-- Status tabs + course filter -->
+    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4 flex-wrap gap-3">
+      <ul class="nav nav-tabs lms-course-tabs mb-0 border-0" id="assignTabs">
+        <li class="nav-item">
+          <a class="nav-link active" data-bs-toggle="tab" href="#tab-all-assign">All</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-pending">Pending</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-submitted">Submitted</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-graded">Graded</a>
+        </li>
+      </ul>
+      <select class="form-select form-select-sm w-auto" id="courseFilter">
+        <option value="all">All Courses</option>
+        {% for course in courses %}
+        <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="card-body p-0">
+      <div class="tab-content">
+
+        <!-- ── All ── -->
+        <div class="tab-pane fade show active" id="tab-all-assign">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Title</th>
+                  <th>Course</th>
+                  <th>Type</th>
+                  <th>Due Date</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody id="allTableBody">
+                {% for item in assignments %}
+                <tr class="assign-row" data-course="{{ item.course_code }}">
+                  <td class="px-4">
+                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">
+                      {{ item.title }}
+                    </a>
+                    {% if item.urgent %}
+                    <span class="badge bg-danger ms-2" style="font-size:0.65rem;">Due Soon</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span>
+                  </td>
+                  <td>
+                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                      <i class="bi {% if item.item_type == 'quiz' %}bi-patch-question{% else %}bi-file-earmark-text{% endif %} me-1"></i>
+                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
+                    </span>
+                  </td>
+                  <td class="small text-muted">{{ item.due_date }}</td>
+                  <td>
+                    {% if item.status == "graded" %}
+                      <span class="badge bg-success rounded-pill">Graded</span>
+                    {% elif item.status == "submitted" %}
+                      <span class="badge bg-primary rounded-pill">Submitted</span>
+                    {% elif item.status == "late" %}
+                      <span class="badge bg-warning text-dark rounded-pill">Late</span>
+                    {% else %}
+                      <span class="badge bg-secondary rounded-pill">Pending</span>
+                    {% endif %}
+                  </td>
+                  <td class="small fw-semibold">
+                    {% if item.score %}{{ item.score }}{% else %}<span class="text-muted">—</span>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if assignments | length == 0 %}
+                <tr>
+                  <td colspan="6" class="text-center text-muted py-5">
+                    <i class="bi bi-file-earmark-check fs-1 d-block mb-2 opacity-25"></i>
+                    No assignments yet.
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Pending / Late ── -->
+        <div class="tab-pane fade" id="tab-pending">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Title</th>
+                  <th>Course</th>
+                  <th>Type</th>
+                  <th>Due Date</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in assignments %}
+                {% if item.status == "pending" or item.status == "late" %}
+                <tr>
+                  <td class="px-4">
+                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">
+                      {{ item.title }}
+                    </a>
+                    {% if item.urgent %}
+                    <span class="badge bg-danger ms-2" style="font-size:0.65rem;">Due Soon</span>
+                    {% endif %}
+                  </td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
+                  <td>
+                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
+                    </span>
+                  </td>
+                  <td class="small text-muted">{{ item.due_date }}</td>
+                  <td>
+                    {% if item.status == "late" %}
+                      <span class="badge bg-warning text-dark rounded-pill">Late</span>
+                    {% else %}
+                      <span class="badge bg-secondary rounded-pill">Pending</span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Submitted ── -->
+        <div class="tab-pane fade" id="tab-submitted">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Title</th>
+                  <th>Course</th>
+                  <th>Type</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in assignments %}
+                {% if item.status == "submitted" %}
+                <tr>
+                  <td class="px-4">
+                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">{{ item.title }}</a>
+                  </td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
+                  <td>
+                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
+                    </span>
+                  </td>
+                  <td class="small text-muted">{{ item.due_date }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Graded ── -->
+        <div class="tab-pane fade" id="tab-graded">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Title</th>
+                  <th>Course</th>
+                  <th>Type</th>
+                  <th>Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in assignments %}
+                {% if item.status == "graded" %}
+                <tr>
+                  <td class="px-4">
+                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">{{ item.title }}</a>
+                  </td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
+                  <td>
+                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
+                    </span>
+                  </td>
+                  <td class="small fw-semibold text-success">{{ item.score }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Course filter applies to the "All" tab only
+  const courseFilter = document.getElementById('courseFilter');
+  courseFilter?.addEventListener('change', () => {
+    const val = courseFilter.value;
+    document.querySelectorAll('.assign-row').forEach(row => {
+      row.style.display = (val === 'all' || row.dataset.course === val) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}

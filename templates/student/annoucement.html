@@ -1,0 +1,94 @@
+{% extends "base_student.html" %}
+
+{% block title %}Announcements – LMS Portal{% endblock %}
+
+{#
+  Context required:
+    - student_name, student_id, notifications, active_page (= "announcements")
+    - courses:       Vec<CourseContext>  (for the filter dropdown)
+    - announcements: Vec<AnnouncementFullContext>
+        fields: id, title, course (String), course_code (String),
+                date (String), content (String), is_new (bool)
+#}
+
+{% block content %}
+
+  <!-- Page Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Announcements</h4>
+      <p class="text-muted small mb-0">Latest updates from your courses</p>
+    </div>
+    <select class="form-select form-select-sm w-auto" id="annCourseFilter">
+      <option value="all">All Courses</option>
+      {% for course in courses %}
+      <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- Announcements List -->
+  <div id="annList">
+    {% for ann in announcements %}
+    <div class="card border-0 shadow-sm mb-3 ann-card" data-course="{{ ann.course_code }}">
+      <div class="card-body px-4 py-3">
+        <div class="d-flex gap-3 align-items-start">
+
+          <!-- Dot indicator -->
+          <div class="mt-2 flex-shrink-0">
+            {% if ann.is_new %}
+            <div class="announcement-dot bg-warning"></div>
+            {% else %}
+            <div class="announcement-dot bg-secondary opacity-50"></div>
+            {% endif %}
+          </div>
+
+          <div class="flex-grow-1">
+            <!-- Title + badge -->
+            <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap mb-1">
+              <h6 class="fw-bold mb-0">
+                {{ ann.title }}
+                {% if ann.is_new %}
+                <span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem;">New</span>
+                {% endif %}
+              </h6>
+              <span class="text-muted small flex-shrink-0">{{ ann.date }}</span>
+            </div>
+
+            <!-- Course tag -->
+            <div class="mb-2">
+              <span class="badge bg-primary-subtle text-primary fw-semibold me-1">{{ ann.course_code }}</span>
+              <span class="text-muted small">{{ ann.course }}</span>
+            </div>
+
+            <!-- Content preview -->
+            <p class="mb-0 small text-secondary">{{ ann.content }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    {% if announcements | length == 0 %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-megaphone fs-1 d-block mb-2 opacity-25"></i>
+        No announcements yet.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const annFilter = document.getElementById('annCourseFilter');
+  annFilter?.addEventListener('change', () => {
+    const val = annFilter.value;
+    document.querySelectorAll('.ann-card').forEach(card => {
+      card.style.display = (val === 'all' || card.dataset.course === val) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}
