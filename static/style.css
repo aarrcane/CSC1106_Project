@@ -1,0 +1,318 @@
+/* =====================================================
+   LMS Portal – Custom Stylesheet
+   Bootstrap 5 base + Geeks/Moodle-inspired design
+   ===================================================== */
+
+/* ── Variables ── */
+:root {
+  --lms-primary:       #2563eb;
+  --lms-primary-dark:  #1d4ed8;
+  --lms-sidebar-bg:    #1e293b;
+  --lms-sidebar-text:  #94a3b8;
+  --lms-sidebar-hover: #334155;
+  --lms-sidebar-active:#2563eb;
+  --lms-navbar-bg:     #1e293b;
+  --lms-sidebar-width: 240px;
+  --lms-navbar-height: 60px;
+  --lms-body-bg:       #f1f5f9;
+}
+
+/* ── Base ── */
+body.lms-body {
+  background-color: var(--lms-body-bg);
+  font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+/* ── Navbar ── */
+.lms-navbar {
+  background-color: var(--lms-navbar-bg);
+  height: var(--lms-navbar-height);
+  z-index: 1050;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.lms-navbar .navbar-brand {
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+/* Search input in navbar */
+.lms-search {
+  background: rgba(255,255,255,0.08);
+  border-radius: 8px;
+  overflow: hidden;
+  max-width: 220px;
+}
+.lms-search-input::placeholder { color: rgba(255,255,255,0.45); }
+.lms-search-input:focus {
+  box-shadow: none;
+  outline: none;
+  color: white;
+}
+
+/* Avatar circle */
+.lms-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background-color: var(--lms-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+/* ── Sidebar ── */
+.lms-sidebar {
+  position: fixed;
+  top: var(--lms-navbar-height);
+  left: 0;
+  bottom: 0;
+  width: var(--lms-sidebar-width);
+  background-color: var(--lms-sidebar-bg);
+  overflow-y: auto;
+  z-index: 1040;
+  padding: 0.5rem 0;
+  transition: transform 0.25s ease;
+}
+
+/* Mobile: hidden by default */
+@media (max-width: 991.98px) {
+  .lms-sidebar {
+    transform: translateX(-100%);
+  }
+  .lms-sidebar.show {
+    transform: translateX(0);
+  }
+}
+
+.lms-sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1039;
+}
+.lms-sidebar-overlay.show {
+  display: block;
+}
+
+/* Nav links */
+.lms-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.25rem;
+  color: var(--lms-sidebar-text) !important;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 0;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+}
+.lms-nav-link i {
+  font-size: 1.05rem;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.lms-nav-link:hover {
+  background-color: var(--lms-sidebar-hover);
+  color: #fff !important;
+}
+.lms-nav-link.active {
+  background-color: var(--lms-sidebar-active);
+  color: #fff !important;
+}
+
+/* Section divider label */
+.sidebar-divider {
+  padding: 1rem 1.25rem 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #475569;
+  text-transform: uppercase;
+  list-style: none;
+}
+
+/* ── Main content area ── */
+.lms-main {
+  margin-left: var(--lms-sidebar-width);
+  margin-top: var(--lms-navbar-height);
+  padding: 1.75rem 1.75rem;
+  min-height: calc(100vh - var(--lms-navbar-height));
+}
+
+@media (max-width: 991.98px) {
+  .lms-main {
+    margin-left: 0;
+    padding: 1.25rem;
+  }
+}
+
+/* ── Stat cards ── */
+.stat-card {
+  border-radius: 12px;
+  transition: transform 0.15s;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+.stat-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+.stat-value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.stat-label {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-weight: 500;
+}
+
+/* ── Course cards ── */
+.course-card {
+  border-radius: 12px;
+  transition: transform 0.15s, box-shadow 0.15s;
+  overflow: hidden;
+}
+.course-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+}
+
+.course-card-img {
+  height: 130px;
+  background-size: cover;
+  background-position: center;
+  background-color: #cbd5e1;
+  position: relative;
+}
+
+/* Fallback gradient when no image */
+.course-card-img:not([style*="url"]) {
+  background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+}
+
+.course-pin-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.55);
+  color: #fff;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 0.75rem;
+}
+
+.course-code {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--lms-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0;
+}
+
+.course-title {
+  font-size: 0.9rem;
+  color: #1e293b;
+  line-height: 1.3;
+}
+
+/* ── Course tabs ── */
+.lms-course-tabs .nav-link {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: #64748b;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.4rem 0.8rem;
+  transition: color 0.15s;
+}
+.lms-course-tabs .nav-link:hover {
+  color: var(--lms-primary);
+  border-bottom-color: var(--lms-primary);
+  background: transparent;
+}
+.lms-course-tabs .nav-link.active {
+  color: var(--lms-primary);
+  border-bottom: 2px solid var(--lms-primary);
+  background: transparent;
+  font-weight: 600;
+}
+
+/* ── Announcement dot ── */
+.announcement-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Due date icon ── */
+.due-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* ── Card header ── */
+.card-header {
+  background: #fff;
+  border-radius: 12px 12px 0 0 !important;
+}
+.card {
+  border-radius: 12px !important;
+}
+
+/* ── Landing / index page styles ── */
+.custom-navbar {
+  background-color: var(--lms-navbar-bg);
+}
+
+.hero-section {
+  min-height: calc(100vh - 56px);
+  background: linear-gradient(135deg, #f0f4ff 0%, #fafafa 100%);
+}
+
+.role-card:hover .card {
+  transform: translateY(-4px);
+  transition: transform 0.2s;
+  border-color: var(--lms-primary) !important;
+}
+.role-card .card {
+  transition: transform 0.2s, border-color 0.2s;
+  border: 2px solid transparent !important;
+}
+
+.icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.75rem;
+  margin: 0 auto;
+}
+.student-icon  { background: #dbeafe; color: #2563eb; }
+.lecturer-icon { background: #dcfce7; color: #16a34a; }
+.admin-icon    { background: #fef3c7; color: #d97706; }

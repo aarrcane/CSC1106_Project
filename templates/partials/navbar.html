@@ -1,0 +1,112 @@
+<!-- ─────────────────────────────────────────────────────
+     Partial: navbar.html
+     Included by base.html — available on every logged-in page.
+     Requires Tera context variables:
+       - student_name  (String)  e.g. "Lee Zhi Yu"
+       - student_id    (String)  e.g. "2200123"
+       - notifications (Vec)     list of notification objects
+           each has: .icon_class, .text, .sub_text
+───────────────────────────────────────────────────── -->
+<nav class="navbar navbar-expand-lg lms-navbar fixed-top px-3">
+  <div class="d-flex align-items-center gap-3">
+
+    <!-- Sidebar toggle (mobile only) -->
+    <button class="btn btn-link text-white p-0 d-lg-none" id="sidebarToggle" aria-label="Toggle sidebar">
+      <i class="bi bi-list fs-4"></i>
+    </button>
+
+    <!-- Brand -->
+    <a class="navbar-brand fw-bold text-white" href="/">LMS Portal</a>
+  </div>
+
+  <div class="d-flex align-items-center gap-3 ms-auto">
+
+    <!-- Search bar (hidden on small screens) -->
+    <div class="input-group lms-search d-none d-md-flex">
+      <span class="input-group-text bg-transparent border-0 text-white">
+        <i class="bi bi-search"></i>
+      </span>
+      <input
+        type="text"
+        class="form-control bg-transparent border-0 text-white lms-search-input"
+        placeholder="Search courses..."
+      />
+    </div>
+
+    <!-- Notification bell -->
+    <div class="dropdown">
+      <button class="btn btn-link text-white position-relative p-1" data-bs-toggle="dropdown" aria-label="Notifications">
+        <i class="bi bi-bell fs-5"></i>
+        {% if notifications | length > 0 %}
+        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:0.6rem;">
+          {{ notifications | length }}
+        </span>
+        {% endif %}
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow" style="width:300px; max-height:360px; overflow-y:auto;">
+        <li><h6 class="dropdown-header">Notifications</h6></li>
+        {% for notif in notifications %}
+        <li>
+          <a class="dropdown-item py-2" href="#">
+            <div class="d-flex gap-2">
+              <i class="{{ notif.icon_class }} mt-1"></i>
+              <div>
+                <div class="fw-semibold small">{{ notif.text }}</div>
+                <div class="text-muted" style="font-size:0.78rem;">{{ notif.sub_text }}</div>
+              </div>
+            </div>
+          </a>
+        </li>
+        {% endfor %}
+        {% if notifications | length == 0 %}
+        <li><p class="text-center text-muted small py-3 mb-0">No new notifications</p></li>
+        {% endif %}
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item text-center small text-primary" href="/student/notifications">View all</a></li>
+      </ul>
+    </div>
+
+    <!-- Messages -->
+    <button class="btn btn-link text-white p-1" aria-label="Messages">
+      <i class="bi bi-chat-left-text fs-5"></i>
+    </button>
+
+    <!-- Profile dropdown -->
+    <div class="dropdown">
+      <button class="btn p-0 d-flex align-items-center gap-2" data-bs-toggle="dropdown" aria-label="Profile menu">
+        <!-- Avatar: first letter of name -->
+        <div class="lms-avatar">
+          {{ student_name | truncate(length=1, end="") | upper }}
+        </div>
+        <span class="text-white fw-semibold d-none d-md-inline small">{{ student_name }}</span>
+        <i class="bi bi-chevron-down text-white small"></i>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end shadow">
+        <li class="px-3 py-2">
+          <div class="fw-semibold">{{ student_name }}</div>
+          <div class="text-muted small">{{ student_id }}</div>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <a class="dropdown-item" href="/student/profile">
+            <i class="bi bi-person me-2"></i>Profile
+          </a>
+        </li>
+        <li>
+          <a class="dropdown-item" href="/student/settings">
+            <i class="bi bi-gear me-2"></i>Settings
+          </a>
+        </li>
+        <li><hr class="dropdown-divider"></li>
+        <li>
+          <form method="post" action="/logout" class="mb-0">
+              <button type="submit" class="dropdown-item text-danger">
+                <i class="bi bi-box-arrow-right me-2"></i>Logout
+              </button>
+          <form>
+        </li>
+      </ul>
+    </div>
+
+  </div>
+</nav>
