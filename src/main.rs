@@ -161,29 +161,6 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-// To be removed
-async fn student_home(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    let rendered = tmpl.render("student_home.html", &ctx).unwrap();
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-async fn admin_login_page(tmpl: web::Data<Tera>) -> impl Responder {
-    let mut ctx = Context::new();
-    ctx.insert("role_name", "Admin");
-    ctx.insert("username_label", "Email");
-    ctx.insert("action_url", "/login/admin");
-    let rendered = tmpl.render("login.html", &ctx).unwrap();
-
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
 //TODO: Add session handling
 async fn student_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Student) {
@@ -582,7 +559,7 @@ async fn student_announcement(tmpl: web::Data<Tera>, session: Session) -> impl R
 }
 
 
-async fn lecturer_home(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn lecturer_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Lecturer) {
         Ok(user) => user,
         Err(response) => return response,
@@ -664,7 +641,7 @@ async fn lecturer_home(tmpl: web::Data<Tera>, session: Session) -> impl Responde
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn lecturer_course_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn lecturer_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Lecturer) {
         Ok(user) => user,
         Err(response) => return response,
@@ -675,31 +652,10 @@ async fn lecturer_course_page(tmpl: web::Data<Tera>, session: Session) -> impl R
     ctx.insert("student_name", &user.display_name);
     ctx.insert("student_id", "");
     ctx.insert("notifications", &Vec::<NotificationContext>::new());
-    ctx.insert("active_page", "course");
+    ctx.insert("active_page", "courses");
     ctx.insert("is_lecturer", &true);
 
     let rendered = match tmpl.render("lecturer/course.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-async fn lecturer_content_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<NotificationContext>::new());
-    ctx.insert("active_page", "content");
-    ctx.insert("is_lecturer", &true);
-
-    let rendered = match tmpl.render("lecturer/content.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
@@ -853,7 +809,7 @@ async fn lecturer_settings_page(tmpl: web::Data<Tera>, session: Session) -> impl
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn admin_home(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
@@ -1092,12 +1048,10 @@ async fn main() -> std::io::Result<()> {
             .route("/student/assignments", web::get().to(student_assignments))
             .route("/student/grades", web::get().to(student_grades))
             .route("/student/announcement", web::get().to(student_announcement))
-            .route("/student/home", web::get().to(student_home)) //to be removed
 
             // Lecturer Routes
-            .route("/lecturer/home", web::get().to(lecturer_home))
-            .route("/lecturer/course", web::get().to(lecturer_course_page))
-            .route("/lecturer/content", web::get().to(lecturer_content_page))
+            .route("/lecturer/dashboard", web::get().to(lecturer_dashboard))
+            .route("/lecturer/courses", web::get().to(lecturer_courses_page))
             .route("/lecturer/assignments", web::get().to(lecturer_assignments_page))
             .route("/lecturer/quizzes", web::get().to(lecturer_quizzes_page))
             .route("/lecturer/grades", web::get().to(lecturer_grades_page))
@@ -1107,8 +1061,7 @@ async fn main() -> std::io::Result<()> {
             .route("/lecturer/settings", web::get().to(lecturer_settings_page))
 
             // Admin Routes
-            .route("/admin/home", web::get().to(admin_home))
-            .route("/admin/login", web::get().to(admin_login_page))
+            .route("/admin/dashboard", web::get().to(admin_dashboard))
             .route("/admin/users", web::get().to(admin_users_page))
             .route("/admin/courses", web::get().to(admin_courses_page))
             .route("/admin/content", web::get().to(admin_content_page))

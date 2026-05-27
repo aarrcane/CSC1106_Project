@@ -9,23 +9,16 @@
       <li class="sidebar-divider">Main</li>
 
       <li class="nav-item">
-        <a class="nav-link lms-nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/lecturer/home">
+        <a class="nav-link lms-nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/lecturer/dashboard">
           <i class="bi bi-speedometer2"></i>
           <span>Lecturer Dashboard</span>
         </a>
       </li>
 
       <li class="nav-item">
-        <a class="nav-link lms-nav-link {% if active_page == 'course' %}active{% endif %}" href="/lecturer/course">
+        <a class="nav-link lms-nav-link {% if active_page == 'courses' %}active{% endif %}" href="/lecturer/courses">
           <i class="bi bi-book"></i>
-          <span>Course</span>
-        </a>
-      </li>
-
-      <li class="nav-item">
-        <a class="nav-link lms-nav-link {% if active_page == 'content' %}active{% endif %}" href="/lecturer/content">
-          <i class="bi bi-folder2-open"></i>
-          <span>Course Content</span>
+          <span>Courses</span>
         </a>
       </li>
 
