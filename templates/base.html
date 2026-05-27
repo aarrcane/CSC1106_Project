@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" translate="no">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Language" content="en" />
+  <meta name="google" content="notranslate" />
   <title>{% block title %}LMS Portal{% endblock %}</title>
 
   <!-- Bootstrap 5.3 -->
@@ -16,7 +18,7 @@
   {% block extra_css %}{% endblock %}
 </head>
 
-<body class="lms-body">
+<body class="lms-body notranslate" translate="no">
 
   <!-- ── Navbar (shared across all logged-in pages) ── -->
   {% include "partials/navbar.html" %}

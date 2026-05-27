@@ -1,0 +1,85 @@
+<!-- Partial: sidebar_lecturer.html
+     Included by base_lecturer.html.
+     Requires Tera context: active_page (String)
+-->
+<aside class="lms-sidebar" id="sidebar">
+  <nav class="pt-2">
+    <ul class="nav flex-column">
+
+      <li class="sidebar-divider">Main</li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'dashboard' %}active{% endif %}" href="/lecturer/dashboard">
+          <i class="bi bi-speedometer2"></i>
+          <span>Lecturer Dashboard</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'courses' %}active{% endif %}" href="/lecturer/courses">
+          <i class="bi bi-book"></i>
+          <span>Courses</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'assignments' %}active{% endif %}" href="/lecturer/assignments">
+          <i class="bi bi-file-earmark-text"></i>
+          <span>Assignment Management</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'quizzes' %}active{% endif %}" href="/lecturer/quizzes">
+          <i class="bi bi-patch-question"></i>
+          <span>Quiz Management</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'grades' %}active{% endif %}" href="/lecturer/grades">
+          <i class="bi bi-bar-chart-line"></i>
+          <span>Grades</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'attendance' %}active{% endif %}" href="/lecturer/attendance">
+          <i class="bi bi-calendar-check"></i>
+          <span>Attendance</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'forum' %}active{% endif %}" href="/lecturer/forum">
+          <i class="bi bi-chat-square-text"></i>
+          <span>Discussion Forum</span>
+        </a>
+      </li>
+
+      <li class="sidebar-divider">Account</li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'profile' %}active{% endif %}" href="/lecturer/profile">
+          <i class="bi bi-person-circle"></i>
+          <span>Profile</span>
+        </a>
+      </li>
+
+      <li class="nav-item">
+        <a class="nav-link lms-nav-link {% if active_page == 'settings' %}active{% endif %}" href="/lecturer/settings">
+          <i class="bi bi-gear"></i>
+          <span>Settings</span>
+        </a>
+      </li>
+
+      <li class="nav-item mt-3">
+        <a class="nav-link lms-nav-link text-danger-emphasis" href="/logout">
+          <i class="bi bi-box-arrow-right"></i>
+          <span>Logout</span>
+        </a>
+      </li>
+
+    </ul>
+  </nav>
+</aside>
