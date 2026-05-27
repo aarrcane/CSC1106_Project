@@ -107,6 +107,58 @@ struct CourseGradeContext {
     items: Vec<GradeItemContext>,
 }
 
+#[derive(Serialize)]
+struct QuizContext {
+    id: i32,
+    title: String,
+    course_code: String,
+    course_name: String,
+    due_date: String,
+    duration_mins: i32,
+    status: String,         // "upcoming" | "open" | "completed" | "missed"
+    score: Option<String>, // e.g "18/25"
+    total_marks: i32,
+    attempt_allowed: i32,
+    attempts_used: i32,
+    urgent: bool,
+}
+
+#[derive(Serialize)]
+struct AttendanceSessionContext {
+    date: String,
+    topic: String,
+    status: String, // "present" | "absent" | "late" | "excused"
+}
+
+#[derive(Serialize)]
+struct AttendanceCourseContext {
+    code: String,
+    name: String,
+    pct: i32,
+    attended: i32,
+    total: i32,
+    sessions: Vec<AttendanceSessionContext>,
+}
+
+#[derive(Serialize)]
+struct ThreadContext {
+    id: i32,
+    title: String,
+    course_code: String,
+    course_name: String,
+    author: String,
+    author_initials: String,
+    created_at: String,
+    last_reply_at: String,
+    reply_count: i32,
+    view_count: i32,
+    is_pinned: bool,
+    is_answered: bool,
+    is_mine: bool,
+    tags: Vec<String>,
+    preview: String,
+}
+
 fn insert_student_base(ctx: &mut Context, display_name: &str, student_id: &str) {
     ctx.insert("student_name", display_name);
     ctx.insert("student_id", student_id);
@@ -166,7 +218,7 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
 
 //TODO: Add session handling
 async fn student_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match auth::require_role(&session, UserRole::Student) {
+    let _user = match auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -561,6 +613,407 @@ async fn student_announcement(tmpl: web::Data<Tera>, session: Session) -> impl R
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+async fn student_quiz(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    insert_student_base(&mut ctx, &user.display_name, "2501129");
+    ctx.insert("active_page", "quizzes");
+
+    // TODO: replace with DB query for enrolled courses (used by filter dropdown)
+    let courses: Vec<CourseContext> = vec![
+        CourseContext {
+            id: 1, code: "CSC1106".into(), name: "Web Programming".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 65,
+            lecturer: "Dr. Tan Wei Ming".into(), attendance_pct: 90,
+        },
+        CourseContext {
+            id: 2, code: "CSC1107".into(), name: "Operating Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 50,
+            lecturer: "Prof. Lim Ah Kow".into(), attendance_pct: 85,
+        },
+        CourseContext {
+            id: 3, code: "INF2003".into(), name: "Database Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 72,
+            lecturer: "Dr. Ng Siew Lin".into(), attendance_pct: 95,
+        },
+    ];
+    ctx.insert("courses", &courses);
+
+    // TODO: replace with DB query: SELECT * FROM quizzes JOIN enrollments WHERE student_id = ?
+    let quizzes: Vec<QuizContext> = vec![
+        QuizContext {
+            id: 1,
+            title: "Quiz 1 – HTML & CSS Basics".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            due_date: "10 Apr 2026".into(),
+            duration_mins: 20,
+            status: "completed".into(),
+            score: Some("18 / 20".into()),
+            total_marks: 20,
+            attempt_allowed: 1,
+            attempts_used: 1,
+            urgent: false,
+        },
+        QuizContext {
+            id: 2,
+            title: "Quiz 2 – JavaScript Fundamentals".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            due_date: "28 May 2026".into(),
+            duration_mins: 25,
+            status: "open".into(),
+            score: None,
+            total_marks: 25,
+            attempt_allowed: 2,
+            attempts_used: 0,
+            urgent: true,
+        },
+        QuizContext {
+            id: 3,
+            title: "Quiz 3 – Process Scheduling".into(),
+            course_code: "CSC1107".into(),
+            course_name: "Operating Systems".into(),
+            due_date: "30 May 2026".into(),
+            duration_mins: 30,
+            status: "upcoming".into(),
+            score: None,
+            total_marks: 30,
+            attempt_allowed: 1,
+            attempts_used: 0,
+            urgent: false,
+        },
+        QuizContext {
+            id: 4,
+            title: "Quiz 1 – Relational Model".into(),
+            course_code: "INF2003".into(),
+            course_name: "Database Systems".into(),
+            due_date: "5 Apr 2026".into(),
+            duration_mins: 20,
+            status: "completed".into(),
+            score: Some("19 / 20".into()),
+            total_marks: 20,
+            attempt_allowed: 1,
+            attempts_used: 1,
+            urgent: false,
+        },
+        QuizContext {
+            id: 5,
+            title: "Quiz 2 – Memory Management".into(),
+            course_code: "CSC1107".into(),
+            course_name: "Operating Systems".into(),
+            due_date: "2 Apr 2026".into(),
+            duration_mins: 20,
+            status: "missed".into(),
+            score: None,
+            total_marks: 20,
+            attempt_allowed: 1,
+            attempts_used: 0,
+            urgent: false,
+        },
+    ];
+    // Pre-compute stat-card counts (Tera doesn't support "in" or | list filters)
+    let quiz_open_count = quizzes.iter()
+        .filter(|q| q.status == "open")
+        .count();
+    let quiz_upcoming_count = quizzes.iter()
+        .filter(|q| q.status == "upcoming" || q.status == "open")
+        .count();
+    let quiz_completed_count = quizzes.iter()
+        .filter(|q| q.status == "completed")
+        .count();
+    let quiz_missed_count = quizzes.iter()
+        .filter(|q| q.status == "missed")
+        .count();
+
+    ctx.insert("quizzes",              &quizzes);
+    ctx.insert("quiz_open_count",      &quiz_open_count);
+    ctx.insert("quiz_upcoming_count",  &quiz_upcoming_count);
+    ctx.insert("quiz_completed_count", &quiz_completed_count);
+    ctx.insert("quiz_missed_count",    &quiz_missed_count);
+
+    let rendered = match tmpl.render("student/quiz.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn student_attendance(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    insert_student_base(&mut ctx, &user.display_name, "2501129");
+    ctx.insert("active_page", "attendance");
+
+    // TODO: replace with DB query for enrolled courses (filter dropdown)
+    let courses: Vec<CourseContext> = vec![
+        CourseContext {
+            id: 1, code: "CSC1106".into(), name: "Web Programming".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 65,
+            lecturer: "Dr. Tan Wei Ming".into(), attendance_pct: 90,
+        },
+        CourseContext {
+            id: 2, code: "CSC1107".into(), name: "Operating Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 50,
+            lecturer: "Prof. Lim Ah Kow".into(), attendance_pct: 85,
+        },
+        CourseContext {
+            id: 3, code: "INF2003".into(), name: "Database Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 72,
+            lecturer: "Dr. Ng Siew Lin".into(), attendance_pct: 95,
+        },
+    ];
+    ctx.insert("courses", &courses);
+
+    // TODO: replace with DB query: SELECT sessions, attendance_records WHERE student_id = ?
+    let attendance_courses: Vec<AttendanceCourseContext> = vec![
+        AttendanceCourseContext {
+            code: "CSC1106".into(),
+            name: "Web Programming".into(),
+            pct: 90,
+            attended: 9,
+            total: 10,
+            sessions: vec![
+                AttendanceSessionContext { date: "5 Mar 2026".into(),  topic: "Introduction to HTML".into(),     status: "present".into() },
+                AttendanceSessionContext { date: "12 Mar 2026".into(), topic: "CSS Layouts & Flexbox".into(),    status: "present".into() },
+                AttendanceSessionContext { date: "19 Mar 2026".into(), topic: "JavaScript Basics".into(),        status: "present".into() },
+                AttendanceSessionContext { date: "26 Mar 2026".into(), topic: "DOM Manipulation".into(),         status: "absent".into()  },
+                AttendanceSessionContext { date: "2 Apr 2026".into(),  topic: "Fetch API & AJAX".into(),         status: "present".into() },
+                AttendanceSessionContext { date: "9 Apr 2026".into(),  topic: "Forms & Validation".into(),       status: "present".into() },
+                AttendanceSessionContext { date: "16 Apr 2026".into(), topic: "Responsive Design".into(),        status: "present".into() },
+                AttendanceSessionContext { date: "23 Apr 2026".into(), topic: "Frameworks Overview".into(),      status: "present".into() },
+                AttendanceSessionContext { date: "7 May 2026".into(),  topic: "Backend Integration".into(),      status: "present".into() },
+                AttendanceSessionContext { date: "14 May 2026".into(), topic: "Project Workshop".into(),         status: "present".into() },
+            ],
+        },
+        AttendanceCourseContext {
+            code: "CSC1107".into(),
+            name: "Operating Systems".into(),
+            pct: 85,
+            attended: 11,
+            total: 13,
+            sessions: vec![
+                AttendanceSessionContext { date: "4 Mar 2026".into(),  topic: "OS Overview".into(),              status: "present".into() },
+                AttendanceSessionContext { date: "11 Mar 2026".into(), topic: "Process Management".into(),       status: "present".into() },
+                AttendanceSessionContext { date: "18 Mar 2026".into(), topic: "CPU Scheduling".into(),           status: "late".into()    },
+                AttendanceSessionContext { date: "25 Mar 2026".into(), topic: "Deadlocks".into(),                status: "present".into() },
+                AttendanceSessionContext { date: "1 Apr 2026".into(),  topic: "Memory Management".into(),        status: "absent".into()  },
+                AttendanceSessionContext { date: "8 Apr 2026".into(),  topic: "Virtual Memory".into(),           status: "present".into() },
+                AttendanceSessionContext { date: "15 Apr 2026".into(), topic: "File Systems".into(),             status: "present".into() },
+                AttendanceSessionContext { date: "22 Apr 2026".into(), topic: "I/O Systems".into(),              status: "absent".into()  },
+                AttendanceSessionContext { date: "6 May 2026".into(),  topic: "Security Basics".into(),          status: "present".into() },
+                AttendanceSessionContext { date: "13 May 2026".into(), topic: "Virtualisation".into(),           status: "present".into() },
+                AttendanceSessionContext { date: "20 May 2026".into(), topic: "Cloud OS Concepts".into(),        status: "present".into() },
+                AttendanceSessionContext { date: "22 May 2026".into(), topic: "Revision Session".into(),         status: "present".into() },
+                AttendanceSessionContext { date: "27 May 2026".into(), topic: "Exam Prep Q&A".into(),            status: "present".into() },
+            ],
+        },
+        AttendanceCourseContext {
+            code: "INF2003".into(),
+            name: "Database Systems".into(),
+            pct: 95,
+            attended: 10,
+            total: 11, // Removed 1 absent -> actually keep it honest
+            sessions: vec![
+                AttendanceSessionContext { date: "6 Mar 2026".into(),  topic: "Relational Model".into(),         status: "present".into() },
+                AttendanceSessionContext { date: "13 Mar 2026".into(), topic: "SQL Basics".into(),               status: "present".into() },
+                AttendanceSessionContext { date: "20 Mar 2026".into(), topic: "Advanced SQL".into(),             status: "present".into() },
+                AttendanceSessionContext { date: "27 Mar 2026".into(), topic: "Normalisation".into(),            status: "present".into() },
+                AttendanceSessionContext { date: "3 Apr 2026".into(),  topic: "ER Diagrams".into(),              status: "present".into() },
+                AttendanceSessionContext { date: "10 Apr 2026".into(), topic: "Transactions & ACID".into(),      status: "present".into() },
+                AttendanceSessionContext { date: "17 Apr 2026".into(), topic: "Indexing & Performance".into(),   status: "excused".into() },
+                AttendanceSessionContext { date: "24 Apr 2026".into(), topic: "NoSQL Overview".into(),           status: "present".into() },
+                AttendanceSessionContext { date: "8 May 2026".into(),  topic: "Database Security".into(),        status: "present".into() },
+                AttendanceSessionContext { date: "15 May 2026".into(), topic: "Lab: Schema Design".into(),       status: "present".into() },
+                AttendanceSessionContext { date: "22 May 2026".into(), topic: "Project Consultation".into(),     status: "present".into() },
+            ],
+        },
+    ];
+
+    // Derive overall stats from the course data
+    let total_sessions: i32     = attendance_courses.iter().map(|c| c.total).sum();
+    let attended_sessions: i32  = attendance_courses.iter().map(|c| c.attended).sum();
+    let absent_sessions: i32    = attendance_courses.iter().flat_map(|c| &c.sessions)
+        .filter(|s| s.status == "absent").count() as i32;
+    let overall_pct: i32 = if total_sessions > 0 {
+        (attended_sessions * 100) / total_sessions
+    } else {
+        0
+    };
+
+    ctx.insert("attendance_courses", &attendance_courses);
+    ctx.insert("total_sessions",    &total_sessions);
+    ctx.insert("attended_sessions", &attended_sessions);
+    ctx.insert("absent_sessions",   &absent_sessions);
+    ctx.insert("overall_pct",       &overall_pct);
+
+    let rendered = match tmpl.render("student/attendance.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn student_forum(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let mut ctx = Context::new();
+    insert_student_base(&mut ctx, &user.display_name, "2501129");
+    ctx.insert("active_page", "forum");
+
+    // TODO: replace with DB query for enrolled courses (filter dropdown)
+    let courses: Vec<CourseContext> = vec![
+        CourseContext {
+            id: 1, code: "CSC1106".into(), name: "Web Programming".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 65,
+            lecturer: "Dr. Tan Wei Ming".into(), attendance_pct: 90,
+        },
+        CourseContext {
+            id: 2, code: "CSC1107".into(), name: "Operating Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 50,
+            lecturer: "Prof. Lim Ah Kow".into(), attendance_pct: 85,
+        },
+        CourseContext {
+            id: 3, code: "INF2003".into(), name: "Database Systems".into(),
+            trimester: "2025/26 Trimester 3".into(), image_url: "".into(),
+            pinned: false, ongoing: true, progress: 72,
+            lecturer: "Dr. Ng Siew Lin".into(), attendance_pct: 95,
+        },
+    ];
+    ctx.insert("courses", &courses);
+
+    // TODO: replace with DB query: SELECT * FROM forum_threads WHERE course_id IN (enrolled) ORDER BY last_reply_at DESC
+    let threads: Vec<ThreadContext> = vec![
+        ThreadContext {
+            id: 1,
+            title: "How do I centre a div vertically in CSS?".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            author: "Lee Zhi Yu".into(),
+            author_initials: "LZ".into(),
+            created_at: "20 May 2026".into(),
+            last_reply_at: "24 May 2026".into(),
+            reply_count: 5,
+            view_count: 42,
+            is_pinned: false,
+            is_answered: true,
+            is_mine: true,
+            tags: vec!["css".into(), "question".into()],
+            preview: "I've been trying to vertically centre a div inside a full-height container but flexbox doesn't seem to work as expected. Any tips?".into(),
+        },
+        ThreadContext {
+            id: 2,
+            title: "[PINNED] Assignment 2 – Clarifications & FAQ".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            author: "Dr. Tan Wei Ming".into(),
+            author_initials: "TW".into(),
+            created_at: "24 May 2026".into(),
+            last_reply_at: "25 May 2026".into(),
+            reply_count: 12,
+            view_count: 198,
+            is_pinned: true,
+            is_answered: false,
+            is_mine: false,
+            tags: vec!["announcement".into(), "assignment".into()],
+            preview: "This thread collects all common questions about Assignment 2. Please read before posting a new question. Submission deadline: 28 May 2026.".into(),
+        },
+        ThreadContext {
+            id: 3,
+            title: "Confused about the difference between paging and segmentation".into(),
+            course_code: "CSC1107".into(),
+            course_name: "Operating Systems".into(),
+            author: "Aisha Rahman".into(),
+            author_initials: "AR".into(),
+            created_at: "22 May 2026".into(),
+            last_reply_at: "23 May 2026".into(),
+            reply_count: 3,
+            view_count: 27,
+            is_pinned: false,
+            is_answered: true,
+            is_mine: false,
+            tags: vec!["memory".into(), "question".into()],
+            preview: "The lecture slides mention both paging and segmentation for memory management. Can someone explain the key difference with a concrete example?".into(),
+        },
+        ThreadContext {
+            id: 4,
+            title: "ER diagram – should relationships have attributes?".into(),
+            course_code: "INF2003".into(),
+            course_name: "Database Systems".into(),
+            author: "Raj Kumar".into(),
+            author_initials: "RK".into(),
+            created_at: "21 May 2026".into(),
+            last_reply_at: "21 May 2026".into(),
+            reply_count: 1,
+            view_count: 15,
+            is_pinned: false,
+            is_answered: false,
+            is_mine: false,
+            tags: vec!["er-diagram".into()],
+            preview: "I know entities have attributes, but for my project I need to store extra info about a relationship. Is that allowed in standard ER notation?".into(),
+        },
+        ThreadContext {
+            id: 5,
+            title: "Actix-web vs Axum – which is easier for beginners?".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            author: "Mei Ling Tan".into(),
+            author_initials: "ML".into(),
+            created_at: "18 May 2026".into(),
+            last_reply_at: "20 May 2026".into(),
+            reply_count: 8,
+            view_count: 63,
+            is_pinned: false,
+            is_answered: true,
+            is_mine: false,
+            tags: vec!["rust".into(), "backend".into()],
+            preview: "We covered Actix in class but I saw Axum mentioned online. For someone just starting out with Rust web dev, which framework is more beginner-friendly?".into(),
+        },
+        ThreadContext {
+            id: 6,
+            title: "Lab 3 – getting a foreign key constraint error on INSERT".into(),
+            course_code: "INF2003".into(),
+            course_name: "Database Systems".into(),
+            author: "Lee Zhi Yu".into(),
+            author_initials: "LZ".into(),
+            created_at: "15 May 2026".into(),
+            last_reply_at: "16 May 2026".into(),
+            reply_count: 2,
+            view_count: 19,
+            is_pinned: false,
+            is_answered: true,
+            is_mine: true,
+            tags: vec!["sql".into(), "lab".into()],
+            preview: "Running the INSERT in Lab 3 throws: ERROR 1452 – Cannot add or update a child row: a foreign key constraint fails. The parent row definitely exists, so I'm not sure what's wrong.".into(),
+        },
+    ];
+    ctx.insert("threads", &threads);
+
+    let rendered = match tmpl.render("student/discussionforum.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
 
 async fn lecturer_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Lecturer) {
@@ -1051,6 +1504,10 @@ async fn main() -> std::io::Result<()> {
             .route("/student/assignments", web::get().to(student_assignments))
             .route("/student/grades", web::get().to(student_grades))
             .route("/student/announcement", web::get().to(student_announcement))
+            .route("/student/quizzes",      web::get().to(student_quiz))
+            .route("/student/attendance",   web::get().to(student_attendance))
+            .route("/student/forum",        web::get().to(student_forum))
+            //.route("/student/home", web::get().to(student_home)) //to be removed
 
             // Lecturer Routes
             .route("/lecturer/dashboard", web::get().to(lecturer_dashboard))

@@ -1,0 +1,231 @@
+{% extends "base_student.html" %}
+
+{% block title %}Attendance – LMS Portal{% endblock %}
+
+{#
+  Context required:
+    - student_name, student_id, notifications, active_page (= "attendance")
+    - overall_pct:       i32   (0–100, aggregate across all courses)
+    - total_sessions:    i32
+    - attended_sessions: i32
+    - absent_sessions:   i32
+    - courses:           Vec<CourseContext>  (for filter dropdown)
+    - attendance_courses: Vec<AttendanceCourseContext>
+        fields: code, name, pct (i32), attended (i32), total (i32),
+                sessions: Vec<SessionContext>
+                    fields: date (String), topic (String),
+                            status ("present"|"absent"|"late"|"excused")
+#}
+
+{% block content %}
+
+  <!-- Page Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Attendance</h4>
+      <p class="text-muted small mb-0">Track your class attendance across all courses</p>
+    </div>
+    <select class="form-select form-select-sm w-auto" id="attCourseFilter">
+      <option value="all">All Courses</option>
+      {% for course in courses %}
+      <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- ── Stat Cards ── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-primary-subtle text-primary">
+            <i class="bi bi-calendar3"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ total_sessions }}</div>
+            <div class="stat-label">Total Sessions</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-success-subtle text-success">
+            <i class="bi bi-check-circle-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ attended_sessions }}</div>
+            <div class="stat-label">Attended</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-danger-subtle text-danger">
+            <i class="bi bi-x-circle-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ absent_sessions }}</div>
+            <div class="stat-label">Absent</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon
+            {% if overall_pct >= 80 %}bg-success-subtle text-success
+            {% elif overall_pct >= 60 %}bg-warning-subtle text-warning
+            {% else %}bg-danger-subtle text-danger{% endif %}">
+            <i class="bi bi-percent"></i>
+          </div>
+          <div>
+            <div class="stat-value
+              {% if overall_pct >= 80 %}text-success
+              {% elif overall_pct >= 60 %}text-warning
+              {% else %}text-danger{% endif %}">
+              {{ overall_pct }}%
+            </div>
+            <div class="stat-label">Overall Rate</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Overall attendance bar ── -->
+  {% if overall_pct < 80 %}
+  <div class="alert
+    {% if overall_pct < 60 %}alert-danger{% else %}alert-warning{% endif %}
+    d-flex align-items-center gap-2 mb-4 border-0 shadow-sm" role="alert">
+    <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+    <div>
+      {% if overall_pct < 60 %}
+        Your overall attendance is critically low (<strong>{{ overall_pct }}%</strong>). Please consult your academic advisor.
+      {% else %}
+        Your overall attendance is below the 80% threshold (<strong>{{ overall_pct }}%</strong>). Aim to attend upcoming sessions.
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Per-Course Attendance ── -->
+  {% for ac in attendance_courses %}
+  <div class="card border-0 shadow-sm mb-4 att-course-block" data-course="{{ ac.code }}">
+
+    <!-- Course Header -->
+    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+      <div>
+        <span class="course-code me-2">{{ ac.code }}</span>
+        <span class="fw-semibold text-dark">{{ ac.name }}</span>
+      </div>
+      <div class="d-flex align-items-center gap-3">
+        <span class="small text-muted">{{ ac.attended }} / {{ ac.total }} sessions</span>
+        <div class="fw-bold
+          {% if ac.pct >= 80 %}text-success
+          {% elif ac.pct >= 60 %}text-warning
+          {% else %}text-danger{% endif %}">
+          {{ ac.pct }}%
+        </div>
+        <div class="progress" style="width: 80px; height: 8px; border-radius: 4px;">
+          <div class="progress-bar
+            {% if ac.pct >= 80 %}bg-success
+            {% elif ac.pct >= 60 %}bg-warning
+            {% else %}bg-danger{% endif %}"
+            style="width: {{ ac.pct }}%;">
+          </div>
+        </div>
+        <!-- Collapse toggle -->
+        <button class="btn btn-sm btn-outline-secondary border-0"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#sessions-{{ loop.index }}"
+                aria-expanded="true">
+          <i class="bi bi-chevron-down small"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Sessions Table (collapsible) -->
+    <div class="collapse show" id="sessions-{{ loop.index }}">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th class="px-4 py-2 small text-muted">#</th>
+                <th class="small text-muted">Date</th>
+                <th class="small text-muted">Topic</th>
+                <th class="small text-muted">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for session in ac.sessions %}
+              <tr>
+                <td class="px-4 small text-muted">{{ loop.index }}</td>
+                <td class="small">{{ session.date }}</td>
+                <td class="small">{{ session.topic }}</td>
+                <td>
+                  {% if session.status == "present" %}
+                    <span class="badge rounded-pill bg-success-subtle text-success">
+                      <i class="bi bi-check-circle me-1"></i>Present
+                    </span>
+                  {% elif session.status == "late" %}
+                    <span class="badge rounded-pill bg-warning-subtle text-warning">
+                      <i class="bi bi-clock-history me-1"></i>Late
+                    </span>
+                  {% elif session.status == "excused" %}
+                    <span class="badge rounded-pill bg-info-subtle text-info">
+                      <i class="bi bi-shield-check me-1"></i>Excused
+                    </span>
+                  {% else %}
+                    <span class="badge rounded-pill bg-danger-subtle text-danger">
+                      <i class="bi bi-x-circle me-1"></i>Absent
+                    </span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+              {% if ac.sessions | length == 0 %}
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4 small">
+                  No sessions recorded yet.
+                </td>
+              </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  {% endfor %}
+
+  {% if attendance_courses | length == 0 %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-calendar-check fs-1 d-block mb-2 opacity-25"></i>
+      No attendance data available yet.
+    </div>
+  </div>
+  {% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Course filter — show/hide per-course blocks
+  const attFilter = document.getElementById('attCourseFilter');
+  attFilter?.addEventListener('change', () => {
+    const val = attFilter.value;
+    document.querySelectorAll('.att-course-block').forEach(block => {
+      block.style.display = (val === 'all' || block.dataset.course === val) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}
