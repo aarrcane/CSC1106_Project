@@ -43,11 +43,7 @@ impl UserRole {
     }
 
     pub fn login_path(self) -> &'static str {
-        match self {
-            Self::Student => "/login/student",
-            Self::Lecturer => "/login/lecturer",
-            Self::Admin => "/login/admin",
-        }
+        "/login"
     }
 
     pub fn home_path(self) -> &'static str {
@@ -80,56 +76,21 @@ pub struct CurrentUser {
     pub display_name: String,
 }
 
-pub async fn login_page(
-    tmpl: web::Data<Tera>,
-    session: Session,
-    path: web::Path<String>,
-) -> HttpResponse {
-    match redirect_authenticated_user(&session) {
-        Ok(Some(response)) => return response,
-        Ok(None) => {}
-        Err(response) => return response,
-    }
-
-    let Some(role) = UserRole::from_slug(path.as_str()) else {
-        return HttpResponse::NotFound().body("Unknown login role");
-    };
-
-    render_login(tmpl.get_ref(), role, "", "", false)
-}
-
 pub async fn login_submit(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
     session: Session,
-    path: web::Path<String>,
     form: web::Form<LoginForm>,
 ) -> HttpResponse {
-    let Some(selected_role) = UserRole::from_slug(path.as_str()) else {
-        return HttpResponse::NotFound().body("Unknown login role");
-    };
-
     let email = form.email.trim().to_lowercase();
     if email.is_empty() || form.password.is_empty() {
-        return render_login(
-            tmpl.get_ref(),
-            selected_role,
-            &email,
-            "Email and password are required.",
-            true,
-        );
+        return render_login(tmpl.get_ref(), &email, "Email and password are required.", true);
     }
 
     let user = match find_user_by_email(db.get_ref(), &email).await {
         Ok(Some(user)) => user,
         Ok(None) => {
-            return render_login(
-                tmpl.get_ref(),
-                selected_role,
-                &email,
-                "Invalid email or password.",
-                true,
-            );
+            return render_login(tmpl.get_ref(), &email, "Invalid email or password.", true);
         }
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -138,33 +99,11 @@ pub async fn login_submit(
     };
 
     if !user.is_active {
-        return render_login(
-            tmpl.get_ref(),
-            selected_role,
-            &email,
-            "This account is currently inactive.",
-            true,
-        );
+        return render_login(tmpl.get_ref(), &email, "This account is currently inactive.", true);
     }
 
     if !verify_password(&form.password, &user.password_hash) {
-        return render_login(
-            tmpl.get_ref(),
-            selected_role,
-            &email,
-            "Invalid email or password.",
-            true,
-        );
-    }
-
-    if user.role != selected_role.as_str() {
-        return render_login(
-            tmpl.get_ref(),
-            selected_role,
-            &email,
-            "This account does not have access to the selected portal.",
-            true,
-        );
+        return render_login(tmpl.get_ref(), &email, "Invalid email or password.", true);
     }
 
     session.renew();
@@ -173,7 +112,11 @@ pub async fn login_submit(
             .body(format!("Failed to create login session: {error}"));
     }
 
-    redirect(selected_role.home_path())
+    let Some(role) = UserRole::from_slug(&user.role) else {
+        return HttpResponse::InternalServerError().body("Unknown user role");
+    };
+
+    redirect(role.home_path())
 }
 
 pub async fn logout(session: Session) -> HttpResponse {
@@ -214,20 +157,16 @@ pub fn require_role(
 
 fn render_login(
     tmpl: &Tera,
-    role: UserRole,
     email_value: &str,
     error_message: &str,
     has_error: bool,
 ) -> HttpResponse {
     let mut ctx = Context::new();
-    ctx.insert("role_name", role.display_name());
-    ctx.insert("username_label", "Email");
-    ctx.insert("action_url", role.login_path());
     ctx.insert("email_value", email_value);
     ctx.insert("error_message", error_message);
     ctx.insert("has_error", &has_error);
 
-    match tmpl.render("login.html", &ctx) {
+    match tmpl.render("index.html", &ctx) {
         Ok(rendered) => HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .content_type("text/html")

@@ -155,7 +155,10 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
         Err(response) => return response,
     }
 
-    let ctx = Context::new();
+    let mut ctx = Context::new();
+    ctx.insert("email_value", "");
+    ctx.insert("error_message", "");
+    ctx.insert("has_error", &false);
     let rendered = tmpl.render("index.html", &ctx).unwrap();
 
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -1038,8 +1041,8 @@ async fn main() -> std::io::Result<()> {
 
             // Public Routes
             .route("/", web::get().to(index))
-            .route("/login/{role}", web::get().to(auth::login_page))
-            .route("/login/{role}", web::post().to(auth::login_submit))
+            .route("/login", web::get().to(index))
+            .route("/login", web::post().to(auth::login_submit))
             .route("/logout", web::post().to(auth::logout))
 
             // Student Routes
