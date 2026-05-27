@@ -23,6 +23,7 @@
 
     {% if not is_admin %}
     <!-- Search bar (hidden on small screens) -->
+    {% if not is_admin and not is_lecturer %}
     <div class="input-group lms-search d-none d-md-flex">
       <span class="input-group-text bg-transparent border-0 text-white">
         <i class="bi bi-search"></i>
@@ -33,6 +34,7 @@
         placeholder="Search courses..."
       />
     </div>
+    {% endif %}
     {% endif %}
 
     <!-- Notification bell -->
@@ -64,7 +66,7 @@
         <li><p class="text-center text-muted small py-3 mb-0">No new notifications</p></li>
         {% endif %}
         <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item text-center small text-primary" href="{% if is_admin %}/admin/notifications{% else %}/student/notifications{% endif %}">View all</a></li>
+        <li><a class="dropdown-item text-center small text-primary" href="{% if is_admin %}/admin/notifications{% elif is_lecturer %}/lecturer/notifications{% else %}/student/notifications{% endif %}">View all</a></li>
       </ul>
     </div>
 
@@ -90,12 +92,12 @@
         </li>
         <li><hr class="dropdown-divider"></li>
         <li>
-          <a class="dropdown-item" href="{% if is_admin %}/admin/profile{% else %}/student/profile{% endif %}">
+          <a class="dropdown-item" href="{% if is_admin %}/admin/profile{% elif is_lecturer %}/lecturer/profile{% else %}/student/profile{% endif %}">
             <i class="bi bi-person me-2"></i>Profile
           </a>
         </li>
         <li>
-          <a class="dropdown-item" href="{% if is_admin %}/admin/settings{% else %}/student/settings{% endif %}">
+          <a class="dropdown-item" href="{% if is_admin %}/admin/settings{% elif is_lecturer %}/lecturer/settings{% else %}/student/settings{% endif %}">
             <i class="bi bi-gear me-2"></i>Settings
           </a>
         </li>

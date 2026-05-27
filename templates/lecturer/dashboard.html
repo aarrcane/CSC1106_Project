@@ -1,0 +1,158 @@
+{% extends "base_lecturer.html" %}
+
+{% block title %}Lecturer Dashboard – LMS Portal{% endblock %}
+
+{% block content %}
+
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Welcome back, {{ display_name }} 👋</h4>
+      <p class="text-muted small mb-0">Lecturer Portal</p>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-primary-subtle text-primary"><i class="bi bi-book"></i></div>
+          <div>
+            <div class="stat-value">{{ assigned_courses_count | default(value=0) }}</div>
+            <div class="stat-label">Assigned Courses</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-warning-subtle text-warning"><i class="bi bi-people"></i></div>
+          <div>
+            <div class="stat-value">{{ student_count | default(value=0) }}</div>
+            <div class="stat-label">Students</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-danger-subtle text-danger"><i class="bi bi-pencil-square"></i></div>
+          <div>
+            <div class="stat-value">{{ pending_grades_count | default(value=0) }}</div>
+            <div class="stat-label">Pending Grading</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-success-subtle text-success"><i class="bi bi-chat-left-text"></i></div>
+          <div>
+            <div class="stat-value">{{ forum_questions_count | default(value=0) }}</div>
+            <div class="stat-label">Forum Questions</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-journal-bookmark me-2 text-primary"></i>Assigned Courses</h6>
+          <a href="/lecturer/course" class="btn btn-outline-primary btn-sm">Open</a>
+        </div>
+        <div class="list-group list-group-flush">
+          {% for course in assigned_courses %}
+          <div class="list-group-item px-4 py-3">
+            <div class="d-flex align-items-center justify-content-between gap-3">
+              <div>
+                <div class="fw-semibold">{{ course.code }} – {{ course.name }}</div>
+                <div class="small text-muted">{{ course.term }} · {{ course.students }} students</div>
+              </div>
+              <span class="badge bg-light text-dark border">{{ course.status }}</span>
+            </div>
+          </div>
+          {% endfor %}
+          {% if assigned_courses | length == 0 %}
+          <div class="list-group-item px-4 py-3 text-muted small">No assigned courses yet.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-clipboard-check me-2 text-warning"></i>Pending Submissions</h6>
+          <a href="/lecturer/assignments" class="btn btn-outline-secondary btn-sm">Grade</a>
+        </div>
+        <div class="list-group list-group-flush">
+          {% for item in pending_submissions %}
+          <div class="list-group-item px-4 py-3">
+            <div class="d-flex align-items-center justify-content-between gap-3">
+              <div>
+                <div class="fw-semibold">{{ item.title }}</div>
+                <div class="small text-muted">{{ item.course }} · {{ item.submitted_by }} · {{ item.due }}</div>
+              </div>
+              <span class="badge bg-danger">{{ item.pending_count }} pending</span>
+            </div>
+          </div>
+          {% endfor %}
+          {% if pending_submissions | length == 0 %}
+          <div class="list-group-item px-4 py-3 text-muted small">No submissions waiting.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4 mb-4">
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-question-circle me-2 text-success"></i>Recent Forum Questions</h6>
+        </div>
+        <ul class="list-group list-group-flush">
+          {% for q in forum_questions %}
+          <li class="list-group-item px-4 py-3">
+            <div class="fw-semibold small">{{ q.title }}</div>
+            <div class="text-muted small">{{ q.course }} · {{ q.author }} · {{ q.when }}</div>
+          </li>
+          {% endfor %}
+          {% if forum_questions | length == 0 %}
+          <li class="list-group-item px-4 py-3 text-muted small">No forum questions yet.</li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom py-3 px-4">
+          <h6 class="fw-bold mb-0"><i class="bi bi-calendar-event me-2 text-secondary"></i>Upcoming Classes or Deadlines</h6>
+        </div>
+        <ul class="list-group list-group-flush">
+          {% for event in upcoming_events %}
+          <li class="list-group-item px-4 py-3">
+            <div class="d-flex align-items-center justify-content-between gap-3">
+              <div>
+                <div class="fw-semibold small">{{ event.title }}</div>
+                <div class="text-muted small">{{ event.course }}</div>
+              </div>
+              <span class="badge bg-light text-dark border">{{ event.when }}</span>
+            </div>
+          </li>
+          {% endfor %}
+          {% if upcoming_events | length == 0 %}
+          <li class="list-group-item px-4 py-3 text-muted small">No upcoming items.</li>
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}
