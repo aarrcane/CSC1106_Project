@@ -1,0 +1,356 @@
+{% extends "base_student.html" %}
+
+{% block title %}Quizzes – LMS Portal{% endblock %}
+
+{#
+  Context required:
+    - student_name, student_id, notifications, active_page (= "quizzes")
+    - courses:  Vec<CourseContext>
+    - quizzes:  Vec<QuizContext>
+        fields: id, title, course_code, course_name,
+                due_date (String), duration_mins (i32),
+                status ("upcoming"|"open"|"completed"|"missed"),
+                score (Option<String> e.g. "18 / 25"),
+                total_marks (i32), attempt_allowed (i32),
+                attempts_used (i32), urgent (bool)
+#}
+
+{% block content %}
+
+  <!-- Page Header -->
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Quizzes</h4>
+      <p class="text-muted small mb-0">View and attempt your course quizzes</p>
+    </div>
+    <select class="form-select form-select-sm w-auto" id="quizCourseFilter">
+      <option value="all">All Courses</option>
+      {% for course in courses %}
+      <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <!-- ── Stat Cards ── -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-primary-subtle text-primary">
+            <i class="bi bi-patch-question-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ quizzes | length }}</div>
+            <div class="stat-label">Total Quizzes</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-warning-subtle text-warning">
+            <i class="bi bi-hourglass-split"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ quiz_upcoming_count }}</div>
+            <div class="stat-label">Upcoming</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-success-subtle text-success">
+            <i class="bi bi-check-circle-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ quiz_completed_count }}</div>
+            <div class="stat-label">Completed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card stat-card border-0 shadow-sm h-100">
+        <div class="card-body d-flex align-items-center gap-3">
+          <div class="stat-icon bg-danger-subtle text-danger">
+            <i class="bi bi-x-circle-fill"></i>
+          </div>
+          <div>
+            <div class="stat-value">{{ quiz_missed_count }}</div>
+            <div class="stat-label">Missed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Quiz Table ── -->
+  <div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom py-3 px-4">
+      <ul class="nav nav-tabs lms-course-tabs mb-0 border-0" id="quizTabs">
+        <li class="nav-item">
+          <a class="nav-link active" data-bs-toggle="tab" href="#tab-all-quiz">All</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-open">Open</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-upcoming-quiz">Upcoming</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-completed-quiz">Completed</a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" data-bs-toggle="tab" href="#tab-missed-quiz">Missed</a>
+        </li>
+      </ul>
+    </div>
+
+    <div class="card-body p-0">
+      <div class="tab-content">
+
+        <!-- ── All ── -->
+        <div class="tab-pane fade show active" id="tab-all-quiz">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Quiz Title</th>
+                  <th>Course</th>
+                  <th>Due Date</th>
+                  <th>Duration</th>
+                  <th>Attempts</th>
+                  <th>Status</th>
+                  <th>Score</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="allQuizBody">
+                {% for quiz in quizzes %}
+                <tr class="quiz-row" data-course="{{ quiz.course_code }}" data-status="{{ quiz.status }}">
+                  <td class="px-4">
+                    <span class="fw-semibold text-dark">{{ quiz.title }}</span>
+                    {% if quiz.urgent %}
+                    <span class="badge bg-danger ms-2" style="font-size:0.65rem;">Due Soon</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="badge bg-primary-subtle text-primary fw-semibold">{{ quiz.course_code }}</span>
+                  </td>
+                  <td class="small text-muted">{{ quiz.due_date }}</td>
+                  <td class="small text-muted">
+                    <i class="bi bi-clock me-1"></i>{{ quiz.duration_mins }} min
+                  </td>
+                  <td class="small text-muted">
+                    {{ quiz.attempts_used }} / {{ quiz.attempt_allowed }}
+                  </td>
+                  <td>
+                    {% if quiz.status == "open" %}
+                      <span class="badge bg-success rounded-pill">Open</span>
+                    {% elif quiz.status == "upcoming" %}
+                      <span class="badge bg-warning text-dark rounded-pill">Upcoming</span>
+                    {% elif quiz.status == "completed" %}
+                      <span class="badge bg-primary rounded-pill">Completed</span>
+                    {% else %}
+                      <span class="badge bg-danger rounded-pill">Missed</span>
+                    {% endif %}
+                  </td>
+                  <td class="small fw-semibold">
+                    {% if quiz.score %}
+                      <span class="text-success">{{ quiz.score }}</span>
+                    {% else %}
+                      <span class="text-muted">—</span>
+                    {% endif %}
+                  </td>
+                  <td class="pe-4">
+                    {% if quiz.status == "open" and quiz.attempts_used < quiz.attempt_allowed %}
+                      <a href="/student/quizzes/{{ quiz.id }}/attempt"
+                         class="btn btn-primary btn-sm">
+                        <i class="bi bi-play-fill me-1"></i>Start
+                      </a>
+                    {% elif quiz.status == "completed" %}
+                      <a href="/student/quizzes/{{ quiz.id }}/result"
+                         class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-eye me-1"></i>Review
+                      </a>
+                    {% else %}
+                      <button class="btn btn-outline-secondary btn-sm" disabled>
+                        <i class="bi bi-lock me-1"></i>Locked
+                      </button>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                {% if quizzes | length == 0 %}
+                <tr>
+                  <td colspan="8" class="text-center text-muted py-5">
+                    <i class="bi bi-patch-question fs-1 d-block mb-2 opacity-25"></i>
+                    No quizzes available yet.
+                  </td>
+                </tr>
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Open ── -->
+        <div class="tab-pane fade" id="tab-open">
+          <div class="row g-3 p-4">
+            {% for quiz in quizzes %}
+            {% if quiz.status == "open" %}
+            <div class="col-12 col-md-6 col-xl-4">
+              <div class="card border-0 shadow-sm h-100 quiz-card-item" data-course="{{ quiz.course_code }}">
+                <div class="card-body px-4 py-3">
+                  <div class="d-flex align-items-start justify-content-between mb-2">
+                    <span class="badge bg-primary-subtle text-primary fw-semibold">{{ quiz.course_code }}</span>
+                    <span class="badge bg-success rounded-pill">Open</span>
+                  </div>
+                  <h6 class="fw-bold mb-1">{{ quiz.title }}</h6>
+                  <p class="text-muted small mb-3">
+                    <i class="bi bi-clock me-1"></i>{{ quiz.duration_mins }} min &nbsp;·&nbsp;
+                    <i class="bi bi-journals me-1"></i>{{ quiz.total_marks }} marks
+                  </p>
+                  <div class="d-flex align-items-center justify-content-between">
+                    <span class="small text-danger fw-semibold">
+                      <i class="bi bi-alarm me-1"></i>Due {{ quiz.due_date }}
+                    </span>
+                    <a href="/student/quizzes/{{ quiz.id }}/attempt"
+                       class="btn btn-primary btn-sm">
+                      <i class="bi bi-play-fill me-1"></i>Start Quiz
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
+            {% endfor %}
+            {% if quiz_open_count == 0 %}
+            <div class="col-12">
+              <div class="text-center text-muted py-5">
+                <i class="bi bi-check-all fs-1 d-block mb-2 opacity-25"></i>
+                No open quizzes right now.
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- ── Upcoming ── -->
+        <div class="tab-pane fade" id="tab-upcoming-quiz">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Quiz Title</th>
+                  <th>Course</th>
+                  <th>Opens On</th>
+                  <th>Duration</th>
+                  <th>Marks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for quiz in quizzes %}
+                {% if quiz.status == "upcoming" %}
+                <tr class="quiz-row" data-course="{{ quiz.course_code }}">
+                  <td class="px-4 fw-semibold">{{ quiz.title }}</td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ quiz.course_code }}</span></td>
+                  <td class="small text-muted">{{ quiz.due_date }}</td>
+                  <td class="small text-muted"><i class="bi bi-clock me-1"></i>{{ quiz.duration_mins }} min</td>
+                  <td class="small text-muted">{{ quiz.total_marks }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Completed ── -->
+        <div class="tab-pane fade" id="tab-completed-quiz">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Quiz Title</th>
+                  <th>Course</th>
+                  <th>Submitted</th>
+                  <th>Score</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for quiz in quizzes %}
+                {% if quiz.status == "completed" %}
+                <tr class="quiz-row" data-course="{{ quiz.course_code }}">
+                  <td class="px-4 fw-semibold">{{ quiz.title }}</td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ quiz.course_code }}</span></td>
+                  <td class="small text-muted">{{ quiz.due_date }}</td>
+                  <td class="small fw-semibold text-success">{{ quiz.score }}</td>
+                  <td class="pe-4">
+                    <a href="/student/quizzes/{{ quiz.id }}/result"
+                       class="btn btn-outline-secondary btn-sm">
+                      <i class="bi bi-eye me-1"></i>Review
+                    </a>
+                  </td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Missed ── -->
+        <div class="tab-pane fade" id="tab-missed-quiz">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th class="px-4 py-3">Quiz Title</th>
+                  <th>Course</th>
+                  <th>Was Due</th>
+                  <th>Marks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for quiz in quizzes %}
+                {% if quiz.status == "missed" %}
+                <tr class="quiz-row" data-course="{{ quiz.course_code }}">
+                  <td class="px-4 fw-semibold text-muted">{{ quiz.title }}</td>
+                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ quiz.course_code }}</span></td>
+                  <td class="small text-danger">{{ quiz.due_date }}</td>
+                  <td class="small text-muted">{{ quiz.total_marks }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Course filter applies to the "All" tab rows
+  const quizCourseFilter = document.getElementById('quizCourseFilter');
+  quizCourseFilter?.addEventListener('change', () => {
+    const val = quizCourseFilter.value;
+    document.querySelectorAll('.quiz-row').forEach(row => {
+      row.style.display = (val === 'all' || row.dataset.course === val) ? '' : 'none';
+    });
+    document.querySelectorAll('.quiz-card-item').forEach(card => {
+      card.closest('.col-12, .col-md-6, .col-xl-4').style.display =
+        (val === 'all' || card.dataset.course === val) ? '' : 'none';
+    });
+  });
+</script>
+{% endblock %}
