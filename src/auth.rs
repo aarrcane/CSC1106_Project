@@ -72,6 +72,7 @@ pub struct LoginForm {
 
 #[derive(Debug)]
 pub struct CurrentUser {
+    pub id: i32,
     pub role: String,
     pub display_name: String,
 }
@@ -222,9 +223,9 @@ fn current_user(session: &Session) -> Result<Option<CurrentUser>, HttpResponse> 
         .get::<String>(SESSION_DISPLAY_NAME)
         .map_err(session_error_response)?;
 
-    if user_id.is_none() {
+    let Some(user_id) = user_id else {
         return Ok(None);
-    }
+    };
     let Some(role) = role else {
         return Ok(None);
     };
@@ -232,7 +233,11 @@ fn current_user(session: &Session) -> Result<Option<CurrentUser>, HttpResponse> 
         return Ok(None);
     };
 
-    Ok(Some(CurrentUser { role, display_name }))
+    Ok(Some(CurrentUser {
+        id: user_id,
+        role,
+        display_name,
+    }))
 }
 
 fn session_error_response(error: actix_session::SessionGetError) -> HttpResponse {
