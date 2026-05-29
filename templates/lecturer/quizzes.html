@@ -1,10 +1,83 @@
 {% extends "base_lecturer.html" %}
 
-{% block title %}Quiz Management - Lecturer{% endblock %}
+{% block title %}Quiz Monitoring - Lecturer{% endblock %}
 
 {% block content %}
-<div class="container py-4">
-  <h4>Quiz Management</h4>
-  <p class="text-muted">Placeholder page for quiz management.</p>
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">Quiz Monitoring</h4>
+    <p class="text-muted small mb-0">Review suspicious activity signals from student quiz attempts</p>
+  </div>
+  <span class="badge bg-primary-subtle text-primary rounded-pill">
+    {{ monitoring_event_count | default(value=0) }} recent events
+  </span>
+</div>
+
+{% set load_error = monitoring_load_error | default(value="") %}
+{% if load_error != "" %}
+<div class="alert alert-warning border-0 shadow-sm">
+  <i class="bi bi-exclamation-triangle me-2"></i>{{ load_error }}
+</div>
+{% endif %}
+
+<div class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-3 px-4">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div>
+        <h5 class="fw-bold mb-0">Suspicious Activity Events</h5>
+        <p class="text-muted small mb-0">Signals are indicators only and should be reviewed with context.</p>
+      </div>
+      <span class="badge bg-secondary-subtle text-secondary rounded-pill">Read-only v1</span>
+    </div>
+  </div>
+
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th class="px-4 py-3">Time</th>
+            <th>Student</th>
+            <th>Quiz</th>
+            <th>Event</th>
+            <th>Severity</th>
+            <th>Details</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in monitoring_events %}
+          <tr>
+            <td class="px-4 small text-muted">{{ event.occurred_at }}</td>
+            <td class="fw-semibold">{{ event.student_display_name }}</td>
+            <td>
+              <span class="badge bg-primary-subtle text-primary fw-semibold">Quiz {{ event.quiz_id }}</span>
+            </td>
+            <td>
+              <code>{{ event.event_type }}</code>
+            </td>
+            <td>
+              {% if event.severity == "critical" %}
+              <span class="badge bg-danger rounded-pill">Critical</span>
+              {% elif event.severity == "warning" %}
+              <span class="badge bg-warning text-dark rounded-pill">Warning</span>
+              {% else %}
+              <span class="badge bg-secondary rounded-pill">Info</span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ event.details | default(value="-") }}</td>
+          </tr>
+          {% endfor %}
+          {% if monitoring_events | length == 0 %}
+          <tr>
+            <td colspan="6" class="text-center text-muted py-5">
+              <i class="bi bi-shield-check fs-1 d-block mb-2 opacity-25"></i>
+              No quiz monitoring events have been logged yet.
+            </td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 {% endblock %}

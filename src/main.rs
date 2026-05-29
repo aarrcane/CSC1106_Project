@@ -1,6 +1,10 @@
 use actix_files::Files;
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
-use actix_web::{App, HttpResponse, HttpServer, Responder, cookie::Key, web};
+use actix_web::{
+    cookie::Key,
+    middleware::{NormalizePath, TrailingSlash},
+    web, App, HttpResponse, HttpServer, Responder,
+};
 use tera::{Context, Tera};
 
 use dotenvy::dotenv;
@@ -124,6 +128,36 @@ struct QuizContext {
 }
 
 #[derive(Serialize)]
+struct QuizAttemptQuestionContext {
+    number: i32,
+    prompt: String,
+    options: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct QuizMonitoringEventPayload {
+    event_type: String,
+    severity: String,
+    details: Option<String>,
+}
+
+#[derive(Serialize)]
+struct QuizMonitoringEventResponse {
+    status: &'static str,
+}
+
+#[derive(Serialize, FromRow)]
+struct QuizMonitoringEventContext {
+    id: i32,
+    quiz_id: i32,
+    student_display_name: String,
+    event_type: String,
+    severity: String,
+    details: Option<String>,
+    occurred_at: String,
+}
+
+#[derive(Serialize)]
 struct AttendanceSessionContext {
     date: String,
     topic: String,
@@ -165,6 +199,98 @@ fn insert_student_base(ctx: &mut Context, display_name: &str, student_id: &str) 
     //TODO: Replace with real DB query for unread notifications
     let notifications: Vec<NotificationContext> = vec![];
     ctx.insert("notifications", &notifications);
+}
+
+fn mock_quiz_attempt(quiz_id: i32) -> Option<QuizContext> {
+    match quiz_id {
+        2 => Some(QuizContext {
+            id: 2,
+            title: "Quiz 2 - JavaScript Fundamentals".into(),
+            course_code: "CSC1106".into(),
+            course_name: "Web Programming".into(),
+            due_date: "28 May 2026".into(),
+            duration_mins: 25,
+            status: "open".into(),
+            score: None,
+            total_marks: 25,
+            attempt_allowed: 2,
+            attempts_used: 0,
+            urgent: true,
+        }),
+        _ => None,
+    }
+}
+
+fn mock_quiz_questions() -> Vec<QuizAttemptQuestionContext> {
+    vec![
+        QuizAttemptQuestionContext {
+            number: 1,
+            prompt: "Which keyword declares a block-scoped JavaScript variable?".into(),
+            options: vec!["var".into(), "let".into(), "static".into(), "global".into()],
+        },
+        QuizAttemptQuestionContext {
+            number: 2,
+            prompt: "Which browser API is commonly used to request JSON data asynchronously?".into(),
+            options: vec![
+                "Fetch API".into(),
+                "Canvas API".into(),
+                "Storage API".into(),
+                "History API".into(),
+            ],
+        },
+        QuizAttemptQuestionContext {
+            number: 3,
+            prompt: "What does DOM stand for?".into(),
+            options: vec![
+                "Document Object Model".into(),
+                "Data Object Map".into(),
+                "Display Output Method".into(),
+                "Document Order Mode".into(),
+            ],
+        },
+    ]
+}
+
+fn valid_monitoring_event_type(event_type: &str) -> bool {
+    matches!(
+        event_type,
+        "monitoring_started"
+            | "monitoring_error"
+            | "camera_permission_denied"
+            | "microphone_permission_denied"
+            | "face_missing"
+            | "face_restored"
+            | "multiple_faces"
+            | "looking_away"
+            | "noise_spike"
+    )
+}
+
+fn valid_monitoring_severity(severity: &str) -> bool {
+    matches!(severity, "info" | "warning" | "critical")
+}
+
+fn truncate_details(details: Option<&str>) -> Option<String> {
+    let details = details?.trim();
+    if details.is_empty() {
+        return None;
+    }
+
+    Some(details.chars().take(500).collect())
+}
+
+fn quiz_monitoring_ready_key(quiz_id: i32) -> String {
+    format!("quiz_{quiz_id}_monitoring_ready")
+}
+
+fn quiz_monitoring_ready(session: &Session, quiz_id: i32) -> Result<bool, HttpResponse> {
+    session
+        .get::<bool>(&quiz_monitoring_ready_key(quiz_id))
+        .map(|ready| ready.unwrap_or(false))
+        .map_err(|error| {
+            HttpResponse::InternalServerError()
+                .body(format!("Failed to read quiz monitoring session: {error}"))
+        })
 }
 
 async fn get_students(db: web::Data<PgPool>) -> impl Responder {
@@ -746,6 +872,179 @@ async fn student_quiz(tmpl: web::Data<Tera>, session: Session) -> impl Responder
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+async fn student_quiz_attempt(
+    path: web::Path<i32>,
+    tmpl: web::Data<Tera>,
+    session: Session,
+) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let quiz_id = path.into_inner();
+    let Some(quiz) = mock_quiz_attempt(quiz_id) else {
+        return HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Quiz attempt is not available.");
+    };
+
+    if let Err(error) = session.insert(quiz_monitoring_ready_key(quiz_id), false) {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to reset quiz monitoring session: {error}"));
+    }
+
+    let mut ctx = Context::new();
+    insert_student_base(&mut ctx, &user.display_name, "2501129");
+    ctx.insert("active_page", "quizzes");
+    ctx.insert("quiz", &quiz);
+    ctx.insert(
+        "monitoring_event_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
+    );
+    ctx.insert(
+        "monitoring_ready_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
+    );
+    ctx.insert("quiz_start_url", &format!("/student/quizzes/{quiz_id}/take"));
+
+    let rendered = match tmpl.render("student/quiz_attempt.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn student_quiz_take(
+    path: web::Path<i32>,
+    tmpl: web::Data<Tera>,
+    session: Session,
+) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let quiz_id = path.into_inner();
+    let Some(quiz) = mock_quiz_attempt(quiz_id) else {
+        return HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Quiz attempt is not available.");
+    };
+
+    match quiz_monitoring_ready(&session, quiz_id) {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::SeeOther()
+                .insert_header(("Location", format!("/student/quizzes/{quiz_id}/attempt")))
+                .finish();
+        }
+        Err(response) => return response,
+    }
+
+    let mut ctx = Context::new();
+    insert_student_base(&mut ctx, &user.display_name, "2501129");
+    ctx.insert("active_page", "quizzes");
+    ctx.insert("quiz", &quiz);
+    ctx.insert("questions", &mock_quiz_questions());
+    ctx.insert("quiz_seconds", &(quiz.duration_mins * 60));
+    ctx.insert(
+        "monitoring_event_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
+    );
+    ctx.insert(
+        "monitoring_ready_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
+    );
+
+    let rendered = match tmpl.render("student/quiz_take.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn mark_quiz_monitoring_ready(
+    path: web::Path<i32>,
+    session: Session,
+) -> impl Responder {
+    let _user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let quiz_id = path.into_inner();
+    if mock_quiz_attempt(quiz_id).is_none() {
+        return HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Quiz attempt is not available.");
+    }
+
+    match session.insert(quiz_monitoring_ready_key(quiz_id), true) {
+        Ok(_) => HttpResponse::Ok().json(QuizMonitoringEventResponse { status: "ready" }),
+        Err(error) => HttpResponse::InternalServerError()
+            .body(format!("Failed to mark monitoring ready: {error}")),
+    }
+}
+
+async fn save_quiz_monitoring_event(
+    path: web::Path<i32>,
+    db: web::Data<PgPool>,
+    session: Session,
+    payload: web::Json<QuizMonitoringEventPayload>,
+) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let quiz_id = path.into_inner();
+    if mock_quiz_attempt(quiz_id).is_none() {
+        return HttpResponse::NotFound()
+            .content_type("text/plain")
+            .body("Quiz attempt is not available.");
+    }
+
+    let event_type = payload.event_type.trim().to_lowercase();
+    let severity = payload.severity.trim().to_lowercase();
+
+    if !valid_monitoring_event_type(&event_type) {
+        return HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Unknown monitoring event type.");
+    }
+
+    if !valid_monitoring_severity(&severity) {
+        return HttpResponse::BadRequest()
+            .content_type("text/plain")
+            .body("Unknown monitoring event severity.");
+    }
+
+    let details = truncate_details(payload.details.as_deref());
+    let result = sqlx::query(
+        "INSERT INTO quiz_monitoring_events
+            (quiz_id, student_user_id, student_display_name, event_type, severity, details)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(quiz_id)
+    .bind(user.id)
+    .bind(&user.display_name)
+    .bind(&event_type)
+    .bind(&severity)
+    .bind(details)
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(QuizMonitoringEventResponse { status: "saved" }),
+        Err(error) => {
+            HttpResponse::InternalServerError().body(format!("Failed to save event: {error}"))
+        }
+    }
+}
+
 async fn student_attendance(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
@@ -1139,7 +1438,11 @@ async fn lecturer_assignments_page(tmpl: web::Data<Tera>, session: Session) -> i
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn lecturer_quizzes_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn lecturer_quizzes_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Lecturer) {
         Ok(user) => user,
         Err(response) => return response,
@@ -1152,6 +1455,34 @@ async fn lecturer_quizzes_page(tmpl: web::Data<Tera>, session: Session) -> impl 
     ctx.insert("notifications", &Vec::<NotificationContext>::new());
     ctx.insert("active_page", "quizzes");
     ctx.insert("is_lecturer", &true);
+
+    let events = match sqlx::query_as::<_, QuizMonitoringEventContext>(
+        "SELECT
+            id,
+            quiz_id,
+            student_display_name,
+            event_type,
+            severity,
+            details,
+            TO_CHAR(occurred_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') AS occurred_at
+         FROM quiz_monitoring_events
+         ORDER BY occurred_at DESC
+         LIMIT 50",
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(events) => events,
+        Err(error) => {
+            ctx.insert(
+                "monitoring_load_error",
+                &format!("Could not load quiz monitoring events: {error}"),
+            );
+            Vec::new()
+        }
+    };
+    ctx.insert("monitoring_events", &events);
+    ctx.insert("monitoring_event_count", &events.len());
 
     let rendered = match tmpl.render("lecturer/quizzes.html", &ctx) {
         Ok(html) => html,
@@ -1481,6 +1812,7 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(move || {
         App::new()
+            .wrap(NormalizePath::new(TrailingSlash::Trim))
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), session_key.clone())
                     .cookie_secure(false)
@@ -1505,6 +1837,10 @@ async fn main() -> std::io::Result<()> {
             .route("/student/grades", web::get().to(student_grades))
             .route("/student/announcement", web::get().to(student_announcement))
             .route("/student/quizzes",      web::get().to(student_quiz))
+            .route("/student/quizzes/{quiz_id}/attempt", web::get().to(student_quiz_attempt))
+            .route("/student/quizzes/{quiz_id}/take", web::get().to(student_quiz_take))
+            .route("/student/quizzes/{quiz_id}/monitoring-ready", web::post().to(mark_quiz_monitoring_ready))
+            .route("/student/quizzes/{quiz_id}/monitoring-events", web::post().to(save_quiz_monitoring_event))
             .route("/student/attendance",   web::get().to(student_attendance))
             .route("/student/forum",        web::get().to(student_forum))
             //.route("/student/home", web::get().to(student_home)) //to be removed

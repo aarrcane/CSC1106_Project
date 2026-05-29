@@ -1,0 +1,140 @@
+{% extends "base_student.html" %}
+
+{% block title %}Quiz Instructions - LMS Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <a href="/student/quizzes" class="small text-decoration-none text-muted">
+      <i class="bi bi-arrow-left me-1"></i>Back to quizzes
+    </a>
+    <h4 class="fw-bold mb-0 mt-2">{{ quiz.title }}</h4>
+    <p class="text-muted small mb-0">{{ quiz.course_code }} - {{ quiz.course_name }}</p>
+  </div>
+  <div class="text-end">
+    <div class="small text-muted">Duration</div>
+    <div class="fw-bold">{{ quiz.duration_mins }} minutes</div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <h5 class="fw-bold mb-0">Before You Start</h5>
+        <p class="text-muted small mb-0">The quiz questions are hidden until monitoring is enabled.</p>
+      </div>
+      <div class="card-body p-4">
+        <div class="quiz-locked-panel mb-4" id="quizLockedPanel">
+          <i class="bi bi-shield-lock-fill"></i>
+          <h6 class="fw-bold mb-1">Quiz content locked</h6>
+          <p class="small text-muted mb-0">
+            Enable camera, microphone, and face monitoring to enter the quiz. The timer starts after you enter.
+          </p>
+        </div>
+
+        <div class="row g-3 mb-4">
+          <div class="col-12 col-md-6">
+            <div class="monitor-status-tile h-100">
+              <i class="bi bi-camera-video text-primary"></i>
+              <span class="small fw-semibold">Camera must stay on.</span>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="monitor-status-tile h-100">
+              <i class="bi bi-mic text-primary"></i>
+              <span class="small fw-semibold">Microphone must stay on.</span>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="monitor-status-tile h-100">
+              <i class="bi bi-person-bounding-box text-primary"></i>
+              <span class="small fw-semibold">Stay visible in frame.</span>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="monitor-status-tile h-100">
+              <i class="bi bi-volume-mute text-primary"></i>
+              <span class="small fw-semibold">Keep the room quiet.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="alert alert-warning border-0 quiz-lock-alert" id="quizLockAlert">
+          <i class="bi bi-lock-fill me-2"></i>
+          Start monitoring to unlock the quiz entry button.
+        </div>
+
+        <div class="d-flex align-items-center justify-content-end gap-2">
+          <a href="/student/quizzes" class="btn btn-outline-secondary">Cancel</a>
+          <a href="{{ quiz_start_url }}" class="btn btn-primary disabled" id="enterQuizButton" aria-disabled="true">
+            <i class="bi bi-play-fill me-1"></i>Enter Quiz
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="card border-0 shadow-sm quiz-monitor-card"
+         id="quiz-monitor-root"
+         data-event-url="{{ monitoring_event_url }}"
+         data-ready-url="{{ monitoring_ready_url }}">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div>
+            <h5 class="fw-bold mb-0">Activity Monitor</h5>
+            <p class="text-muted small mb-0">Required before entering the quiz</p>
+          </div>
+          <span class="badge bg-secondary-subtle text-secondary rounded-pill" id="monitorOverallStatus">Idle</span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <video id="monitorVideo" class="quiz-monitor-video mb-3" autoplay muted playsinline></video>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="cameraStatusDot"></span>
+              <span class="small fw-semibold" id="cameraStatusText">Camera idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="microphoneStatusDot"></span>
+              <span class="small fw-semibold" id="microphoneStatusText">Mic idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="faceStatusDot"></span>
+              <span class="small fw-semibold" id="faceStatusText">Face idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="noiseStatusDot"></span>
+              <span class="small fw-semibold" id="noiseStatusText">Noise idle</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-grid gap-2 mb-3">
+          <button class="btn btn-primary" id="startMonitoringButton" type="button">
+            <i class="bi bi-camera-video me-1"></i>Start Monitoring
+          </button>
+        </div>
+
+        <div class="small text-muted mb-2">Recent activity</div>
+        <div class="quiz-monitor-log" id="monitorEventLog">
+          <div class="text-muted small">No events logged yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script type="module" src="/static/quiz_monitoring.js"></script>
+{% endblock %}
