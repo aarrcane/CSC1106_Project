@@ -1,10 +1,719 @@
 {% extends "base_lecturer.html" %}
 
-{% block title %}Course - Lecturer{% endblock %}
+{% block extra_css %}
+<style>
+  /* ── Modal ── */
+  .lms-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 1rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+
+  .lms-modal-overlay.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .lms-modal {
+    background: #fff;
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 560px;
+    max-height: 90dvh;
+    overflow-y: auto;
+    transform: translateY(12px);
+    transition: transform 200ms ease;
+  }
+
+  .lms-modal-overlay.open .lms-modal {
+    transform: translateY(0);
+  }
+
+  .lms-modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--color-divider, #e5e7eb);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .lms-modal-header h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .lms-modal-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .lms-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--color-divider, #e5e7eb);
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+  }
+
+  .lms-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .lms-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .lms-form-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .lms-form-input,
+  .lms-form-select,
+  .lms-form-textarea {
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.875rem;
+    width: 100%;
+    outline: none;
+    transition: border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .lms-form-input:focus,
+  .lms-form-select:focus,
+  .lms-form-textarea:focus {
+    border-color: var(--lms-primary, #2563eb);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  }
+
+  .lms-form-textarea {
+    resize: vertical;
+    min-height: 80px;
+  }
+
+  .lms-form-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-muted, #6b7280);
+  }
+
+  /* ── Delete Modal ── */
+  .lms-delete-modal .lms-modal-body {
+    align-items: center;
+    text-align: center;
+    padding: 2rem 1.5rem;
+  }
+
+  .lms-delete-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: #fee2e2;
+    color: #dc2626;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+
+  .lms-delete-modal h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .lms-delete-modal p {
+    font-size: 0.875rem;
+    color: #6b7280;
+    max-width: 34ch;
+    margin: 0;
+  }
+
+  /* ── PDF Upload ── */
+  .lms-pdf-upload-area {
+    border: 2px dashed var(--color-border, rgba(0, 0, 0, 0.12));
+    border-radius: 0.75rem;
+    padding: 2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 180ms ease, background 180ms ease;
+  }
+
+  .lms-pdf-upload-area:hover,
+  .lms-pdf-upload-area.drag-over {
+    border-color: var(--lms-primary, #2563eb);
+    background: #eff6ff;
+  }
+
+  /* ── Toast ── */
+  .lms-toast-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 300;
+  }
+
+  .lms-toast {
+    background: #1a1d2e;
+    color: #fff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transform: translateX(120%);
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    min-width: 260px;
+  }
+
+  .lms-toast.show {
+    transform: translateX(0);
+  }
+
+  .lms-toast.success {
+    background: #16a34a;
+  }
+
+  .lms-toast.error {
+    background: #dc2626;
+  }
+</style>
+{% endblock %}
+
+{% block title %}
+Course - Lecturer
+{% endblock %}
+
 
 {% block content %}
-<div class="container py-4">
-  <h4>Course</h4>
-  <p class="text-muted">Placeholder page for course management.</p>
+<!-- Page Header -->
+<div class="page-header">
+  <div class="page-header-left">
+    <h4>Course Management</h4>
+    <p>Create, manage and oversee all your assigned courses.</p>
+  </div>
+  <button type="button" class="btn-lms btn-lms-primary" onclick="openModal('createModal')"
+    aria-label="Create new course">
+    <i data-lucide="plus" width="16" height="16"></i> New Course
+  </button>
 </div>
+
+<!-- Stats Bar -->
+<div class="course-stats-bar" role="region" aria-label="Course statistics">
+  <div class="course-stat-card primary">
+    <div class="course-stat-value">4</div>
+    <div class="course-stat-label">Total Courses</div>
+  </div>
+  <div class="course-stat-card success">
+    <div class="course-stat-value">3</div>
+    <div class="course-stat-label">Ongoing</div>
+  </div>
+  <div class="course-stat-card">
+    <div class="course-stat-value">1</div>
+    <div class="course-stat-label">Preparing</div>
+  </div>
+  <div class="course-stat-card">
+    <div class="course-stat-value">128</div>
+    <div class="course-stat-label">Total Students</div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div class="course-toolbar" role="search">
+  <div class="course-search-box">
+    <i data-lucide="search" width="15" height="15" style="color:var(--color-text-faint); flex-shrink:0"></i>
+    <input type="search" placeholder="Search courses by name or code" aria-label="Search courses" />
+  </div>
+  <select class="course-filter-select" aria-label="Filter by status">
+    <option>All Status</option>
+    <option>Ongoing</option>
+    <option>Preparing</option>
+    <option>Archived</option>
+  </select>
+  <select class="course-filter-select" aria-label="Filter by trimester">
+    <option>All Trimesters</option>
+    <option>2025/26 Trimester 3</option>
+    <option>2025/26 Trimester 2</option>
+  </select>
+  <span style="flex:1"></span>
+  <div class="course-view-toggle" role="group" aria-label="View mode">
+    <button type="button" class="active" aria-label="Grid view" id="gridViewBtn" onclick="setView('grid')">
+      <i data-lucide="layout-grid" width="16" height="16"></i>
+    </button>
+    <button type="button" aria-label="List view" id="listViewBtn" onclick="setView('list')">
+      <i data-lucide="list" width="16" height="16"></i>
+    </button>
+  </div>
+</div>
+
+<!-- Course Grid -->
+<div class="course-mgmt-grid" id="courseGrid" role="list">
+
+  <!-- Card 1 -->
+  <article class="course-mgmt-card" role="listitem">
+    <div class="course-mgmt-card-header">
+      <div class="course-accent-bar" style="background:#2563eb"></div>
+      <div style="flex:1; min-width:0">
+        <div class="course-code">CSC2101</div>
+        <div
+          style="font-size:var(--text-base); font-weight:600; color:var(--color-text); margin-top:var(--space-1); line-height:1.3">
+          Web Development II</div>
+      </div>
+      <span class="status-badge status-ongoing"><i data-lucide="circle" width="8" height="8"
+          style="fill:currentColor"></i> Ongoing</span>
+    </div>
+    <div class="course-mgmt-card-body">
+      <div class="course-meta-row">
+        <span class="course-meta-item"><i data-lucide="calendar" width="12" height="12"></i> 2025/26 Tri 3</span>
+        <span class="course-meta-item"><i data-lucide="users" width="12" height="12"></i> 42 students</span>
+        <span class="course-meta-item"><i data-lucide="book" width="12" height="12"></i> 7 modules</span>
+      </div>
+      <div>
+        <div class="progress-label"><span>Progress</span><span>65%</span></div>
+        <div class="course-progress-bar" role="progressbar" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100">
+          <div class="course-progress-fill" style="width:65%"></div>
+        </div>
+      </div>
+    </div>
+    <div class="course-mgmt-card-footer">
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-sm btn-lms-icon" aria-label="View course"
+        onclick="showToast('Opening CSC2101…')">
+        <i data-lucide="eye" width="15" height="15"></i>
+      </button>
+      <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm"
+        onclick="openEditModal('CSC2101 – Web Development II')">
+        <i data-lucide="pencil" width="13" height="13"></i> Edit
+      </button>
+      <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
+        onclick="openDeleteModal('CSC2101 – Web Development II')">
+        <i data-lucide="trash-2" width="13" height="13"></i> Delete
+      </button>
+    </div>
+  </article>
+
+  <!-- Card 2 -->
+  <article class="course-mgmt-card" role="listitem">
+    <div class="course-mgmt-card-header">
+      <div class="course-accent-bar" style="background:#0d9488"></div>
+      <div style="flex:1; min-width:0">
+        <div class="course-code">CSC2203</div>
+        <div
+          style="font-size:var(--text-base); font-weight:600; color:var(--color-text); margin-top:var(--space-1); line-height:1.3">
+          Software Engineering</div>
+      </div>
+      <span class="status-badge status-ongoing"><i data-lucide="circle" width="8" height="8"
+          style="fill:currentColor"></i> Ongoing</span>
+    </div>
+    <div class="course-mgmt-card-body">
+      <div class="course-meta-row">
+        <span class="course-meta-item"><i data-lucide="calendar" width="12" height="12"></i> 2025/26 Tri 3</span>
+        <span class="course-meta-item"><i data-lucide="users" width="12" height="12"></i> 38 students</span>
+        <span class="course-meta-item"><i data-lucide="book" width="12" height="12"></i> 9 modules</span>
+      </div>
+      <div>
+        <div class="progress-label"><span>Progress</span><span>50%</span></div>
+        <div class="course-progress-bar" role="progressbar" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
+          <div class="course-progress-fill" style="width:50%; background:#0d9488"></div>
+        </div>
+      </div>
+    </div>
+    <div class="course-mgmt-card-footer">
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-sm btn-lms-icon" aria-label="View course"
+        onclick="showToast('Opening CSC2203…')">
+        <i data-lucide="eye" width="15" height="15"></i>
+      </button>
+      <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm"
+        onclick="openEditModal('CSC2203 – Software Engineering')">
+        <i data-lucide="pencil" width="13" height="13"></i> Edit
+      </button>
+      <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
+        onclick="openDeleteModal('CSC2203 – Software Engineering')">
+        <i data-lucide="trash-2" width="13" height="13"></i> Delete
+      </button>
+    </div>
+  </article>
+
+  <!-- Card 3 -->
+  <article class="course-mgmt-card" role="listitem">
+    <div class="course-mgmt-card-header">
+      <div class="course-accent-bar" style="background:#7c3aed"></div>
+      <div style="flex:1; min-width:0">
+        <div class="course-code">CSC2304</div>
+        <div
+          style="font-size:var(--text-base); font-weight:600; color:var(--color-text); margin-top:var(--space-1); line-height:1.3">
+          Mobile App Development</div>
+      </div>
+      <span class="status-badge status-ongoing"><i data-lucide="circle" width="8" height="8"
+          style="fill:currentColor"></i> Ongoing</span>
+    </div>
+    <div class="course-mgmt-card-body">
+      <div class="course-meta-row">
+        <span class="course-meta-item"><i data-lucide="calendar" width="12" height="12"></i> 2025/26 Tri 3</span>
+        <span class="course-meta-item"><i data-lucide="users" width="12" height="12"></i> 31 students</span>
+        <span class="course-meta-item"><i data-lucide="book" width="12" height="12"></i> 8 modules</span>
+      </div>
+      <div>
+        <div class="progress-label"><span>Progress</span><span>40%</span></div>
+        <div class="course-progress-bar" role="progressbar" aria-valuenow="40" aria-valuemin="0" aria-valuemax="100">
+          <div class="course-progress-fill" style="width:40%; background:#7c3aed"></div>
+        </div>
+      </div>
+    </div>
+    <div class="course-mgmt-card-footer">
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-sm btn-lms-icon" aria-label="View course"
+        onclick="showToast('Opening CSC2304…')">
+        <i data-lucide="eye" width="15" height="15"></i>
+      </button>
+      <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm"
+        onclick="openEditModal('CSC2304 – Mobile App Development')">
+        <i data-lucide="pencil" width="13" height="13"></i> Edit
+      </button>
+      <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
+        onclick="openDeleteModal('CSC2304 – Mobile App Development')">
+        <i data-lucide="trash-2" width="13" height="13"></i> Delete
+      </button>
+    </div>
+  </article>
+
+  <!-- Card 4 -->
+  <article class="course-mgmt-card" role="listitem">
+    <div class="course-mgmt-card-header">
+      <div class="course-accent-bar" style="background:#d97706"></div>
+      <div style="flex:1; min-width:0">
+        <div class="course-code">CSC2405</div>
+        <div
+          style="font-size:var(--text-base); font-weight:600; color:var(--color-text); margin-top:var(--space-1); line-height:1.3">
+          Cloud Fundamentals</div>
+      </div>
+      <span class="status-badge status-preparing"><i data-lucide="clock" width="10" height="10"></i> Preparing</span>
+    </div>
+    <div class="course-mgmt-card-body">
+      <div class="course-meta-row">
+        <span class="course-meta-item"><i data-lucide="calendar" width="12" height="12"></i> 2025/26 Tri 3</span>
+        <span class="course-meta-item"><i data-lucide="users" width="12" height="12"></i> 17 students</span>
+        <span class="course-meta-item"><i data-lucide="book" width="12" height="12"></i> 6 modules</span>
+      </div>
+      <div>
+        <div class="progress-label"><span>Progress</span><span>10%</span></div>
+        <div class="course-progress-bar" role="progressbar" aria-valuenow="10" aria-valuemin="0" aria-valuemax="100">
+          <div class="course-progress-fill" style="width:10%; background:#d97706"></div>
+        </div>
+      </div>
+    </div>
+    <div class="course-mgmt-card-footer">
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-sm btn-lms-icon" aria-label="View course"
+        onclick="showToast('Opening CSC2405…')">
+        <i data-lucide="eye" width="15" height="15"></i>
+      </button>
+      <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm"
+        onclick="openEditModal('CSC2405 – Cloud Fundamentals')">
+        <i data-lucide="pencil" width="13" height="13"></i> Edit
+      </button>
+      <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
+        onclick="openDeleteModal('CSC2405 – Cloud Fundamentals')">
+        <i data-lucide="trash-2" width="13" height="13"></i> Delete
+      </button>
+    </div>
+  </article>
+</div>
+
+<!-- CREATE COURSE MODAL -->
+<div class="lms-modal-overlay" id="createModal" role="dialog" aria-modal="true" aria-labelledby="createModalTitle"
+  onclick="handleOverlayClick(event,'createModal')">
+  <div class="lms-modal">
+    <div class="lms-modal-header">
+      <h3 id="createModalTitle">Create New Course</h3>
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('createModal')"
+        aria-label="Close">
+        <i data-lucide="x" width="18" height="18"></i>
+      </button>
+    </div>
+    <div class="lms-modal-body">
+
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="courseCode">Course Code *</label>
+        <input class="lms-form-input" id="courseCode" type="text" placeholder="e.g. CSC2101" />
+      </div>
+
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="courseName">Course Name *</label>
+        <input class="lms-form-input" id="courseName" type="text" placeholder="e.g. Web Development II" />
+      </div>
+
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="courseDesc">Description</label>
+        <textarea class="lms-form-textarea" id="courseDesc"></textarea>
+      </div>
+
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="courseFile">Course Material (PDF)</label>
+        <div class="lms-pdf-upload-area" id="pdfUploadArea" onclick="document.getElementById('courseFile').click()">
+          <i data-lucide="upload-cloud" width="28" height="28" style="color:var(--color-text-faint)"></i>
+          <p style="margin:var(--space-2) 0 0; font-size:var(--text-sm); color:var(--color-text-muted)">
+            Click to upload or drag &amp; drop
+          </p>
+          <p style="font-size:var(--text-xs); color:var(--color-text-faint); margin:var(--space-1) 0 0">
+            PDF only · Max 20MB
+          </p>
+          <input type="file" id="courseFile" accept=".pdf" style="display:none" onchange="handleFileSelect(event)" />
+        </div>
+        <div id="pdfPreview"
+          style="display:none; align-items:center; gap:var(--space-3); padding:var(--space-3); background:var(--color-info-bg); border-radius:var(--radius-md); border:1px solid rgba(29,78,216,0.15)">
+          <i data-lucide="file-text" width="20" height="20" style="color:var(--color-info); flex-shrink:0"></i>
+          <span id="pdfFileName"
+            style="font-size:var(--text-sm); color:var(--color-text); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></span>
+          <span id="pdfFileSize" style="font-size:var(--text-xs); color:var(--color-text-muted); flex-shrink:0"></span>
+          <button type="button" onclick="clearFile()"
+            style="padding:2px; color:var(--color-text-muted); background:none; border:none; cursor:pointer; flex-shrink:0"
+            aria-label="Remove file">
+            <i data-lucide="x" width="14" height="14"></i>
+          </button>
+        </div>
+      </div>
+
+    </div>
+    <div class="lms-modal-footer">
+      <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('createModal')">Cancel</button>
+      <button type="button" class="btn-lms btn-lms-primary" onclick="handleCreate()">
+        <i data-lucide="plus" width="15" height="15"></i> Create Course
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT COURSE MODAL -->
+<div class="lms-modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle"
+  onclick="handleOverlayClick(event,'editModal')">
+  <div class="lms-modal">
+    <div class="lms-modal-header">
+      <h3 id="editModalTitle">Edit Course</h3>
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('editModal')"
+        aria-label="Close">
+        <i data-lucide="x" width="18" height="18"></i>
+      </button>
+    </div>
+    <div class="lms-modal-body">
+      <div class="lms-form-row">
+        <div class="lms-form-group">
+          <label class="lms-form-label" for="editCode">Course Code</label>
+          <input class="lms-form-input" id="editCode" type="text" value="CSC2101" />
+        </div>
+        <div class="lms-form-group">
+          <label class="lms-form-label" for="editStatus">Status</label>
+          <select class="lms-form-select" id="editStatus">
+            <option value="ongoing" selected>Ongoing</option>
+            <option value="preparing">Preparing</option>
+            <option value="archived">Archived</option>
+          </select>
+        </div>
+      </div>
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="editName">Course Name</label>
+        <input class="lms-form-input" id="editName" type="text" value="Web Development II" />
+      </div>
+      <div class="lms-form-group">
+        <label class="lms-form-label" for="editDesc">Description</label>
+        <textarea class="lms-form-textarea"
+          id="editDesc">Advanced web development topics including frameworks, APIs, and deployment.</textarea>
+      </div>
+      <div class="lms-form-row">
+        <div class="lms-form-group">
+          <label class="lms-form-label" for="editTrimester">Trimester</label>
+          <select class="lms-form-select" id="editTrimester">
+            <option selected>2025/26 Trimester 3</option>
+            <option>2025/26 Trimester 2</option>
+          </select>
+        </div>
+        <div class="lms-form-group">
+          <label class="lms-form-label" for="editCapacity">Max Students</label>
+          <input class="lms-form-input" id="editCapacity" type="number" value="50" />
+        </div>
+      </div>
+    </div>
+    <div class="lms-modal-footer">
+      <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('editModal')">Cancel</button>
+      <button type="button" class="btn-lms btn-lms-primary" onclick="handleSave()">
+        <i data-lucide="save" width="15" height="15"></i> Save Changes
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE CONFIRM MODAL -->
+<div class="lms-modal-overlay" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle"
+  onclick="handleOverlayClick(event,'deleteModal')">
+  <div class="lms-modal lms-delete-modal">
+    <div class="lms-modal-header" style="border-bottom:none; padding-bottom:0">
+      <span></span>
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('deleteModal')"
+        aria-label="Close">
+        <i data-lucide="x" width="18" height="18"></i>
+      </button>
+    </div>
+    <div class="lms-modal-body">
+      <div class="lms-delete-icon"><i data-lucide="trash-2" width="24" height="24"></i></div>
+      <h4 id="deleteModalTitle">Delete Course</h4>
+      <p id="deleteModalBody">Are you sure you want to delete <strong></strong>? This action cannot be undone and will
+        remove all associated assignments, quizzes, and grades.</p>
+    </div>
+    <div class="lms-modal-footer" style="justify-content:center; gap:var(--space-4)">
+      <button type="button" class="btn-lms btn-lms-secondary" style="min-width:120px"
+        onclick="closeModal('deleteModal')">Cancel</button>
+      <button type="button" class="btn-lms btn-lms-primary" style="min-width:120px; background:var(--color-error)"
+        onclick="handleDelete()">
+        <i data-lucide="trash-2" width="15" height="15"></i> Delete
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="lms-toast-container" aria-live="polite" id="toastContainer"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+<script>
+  lucide.createIcons();
+
+  function openModal(id) {
+    document.getElementById(id).classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function handleOverlayClick(e, id) {
+    if (e.target === document.getElementById(id)) closeModal(id);
+  }
+
+  function openEditModal(courseName) {
+    document.getElementById('editName').value = courseName.split(' – ')[1] || courseName;
+    document.getElementById('editCode').value = courseName.split(' – ')[0] || '';
+    openModal('editModal');
+  }
+
+  let pendingDelete = '';
+  function openDeleteModal(courseName) {
+    pendingDelete = courseName;
+    document.querySelector('#deleteModalBody strong').textContent = '"' + courseName + '"';
+    openModal('deleteModal');
+  }
+
+  function handleFileSelect(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    showFilePreview(file);
+  }
+
+  function showFilePreview(file) {
+    if (file.size > 20 * 1024 * 1024) {
+      showToast('File exceeds 20MB limit.', 'error');
+      clearFile();
+      return;
+    }
+    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
+    document.getElementById('pdfUploadArea').style.display = 'none';
+    const preview = document.getElementById('pdfPreview');
+    preview.style.display = 'flex';
+    document.getElementById('pdfFileName').textContent = file.name;
+    document.getElementById('pdfFileSize').textContent = sizeMB + ' MB';
+    lucide.createIcons({ nodes: [preview] });
+  }
+
+  function clearFile() {
+    document.getElementById('courseFile').value = '';
+    document.getElementById('pdfUploadArea').style.display = 'flex';
+    document.getElementById('pdfPreview').style.display = 'none';
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const area = document.getElementById('pdfUploadArea');
+    if (!area) return;
+    area.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      area.classList.add('drag-over');
+    });
+    area.addEventListener('dragleave', () => area.classList.remove('drag-over'));
+    area.addEventListener('drop', (e) => {
+      e.preventDefault();
+      area.classList.remove('drag-over');
+      const file = e.dataTransfer.files[0];
+      if (file && file.type === 'application/pdf') {
+        document.getElementById('courseFile').files = e.dataTransfer.files;
+        showFilePreview(file);
+      } else {
+        showToast('Please upload a PDF file only.', 'error');
+      }
+    });
+  });
+
+  function handleCreate() {
+    const name = document.getElementById('courseName').value.trim();
+    const code = document.getElementById('courseCode').value.trim();
+    if (!name || !code) { showToast('Please fill in required fields.', 'error'); return; }
+    closeModal('createModal');
+    showToast('Course "' + code + ' – ' + name + '" created.', 'success');
+    document.getElementById('courseName').value = '';
+    document.getElementById('courseCode').value = '';
+    document.getElementById('courseDesc').value = '';
+    clearFile();
+  }
+
+  function handleSave() {
+    closeModal('editModal');
+    showToast('Course changes saved.', 'success');
+  }
+
+  function handleDelete() {
+    closeModal('deleteModal');
+    showToast('"' + pendingDelete + '" has been deleted.', 'error');
+  }
+
+  function showToast(msg, type = '') {
+    const container = document.getElementById('toastContainer');
+    const t = document.createElement('div');
+    t.className = 'lms-toast ' + type;
+    t.innerHTML = '<i data-lucide="' + (type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info') + '" width="16" height="16"></i>' + msg;
+    container.appendChild(t);
+    lucide.createIcons({ nodes: [t] });
+    requestAnimationFrame(() => { requestAnimationFrame(() => t.classList.add('show')); });
+    setTimeout(() => {
+      t.classList.remove('show');
+      setTimeout(() => t.remove(), 300);
+    }, 3000);
+  }
+
+  function setView(mode) {
+    const grid = document.getElementById('courseGrid');
+    document.getElementById('gridViewBtn').classList.toggle('active', mode === 'grid');
+    document.getElementById('listViewBtn').classList.toggle('active', mode === 'list');
+    grid.style.gridTemplateColumns = mode === 'list' ? '1fr' : '';
+  }
+</script>
 {% endblock %}
