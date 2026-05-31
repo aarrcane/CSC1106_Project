@@ -9,42 +9,9 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-INSERT INTO users (display_name, email, password_hash, role, is_active)
-VALUES
-    (
-        'Demo Student',
-        'student@lms.test',
-        '$argon2id$v=19$m=19456,t=2,p=1$c3R1ZGVudC1sb2dpbi1zYWx0$YjXh5UzX4GL4BL/LSooMhnKaT0MjIE+cdvu5wQg3Yk0',
-        'student',
-        TRUE
-    ),
-    (
-        'Demo Lecturer',
-        'lecturer@lms.test',
-        '$argon2id$v=19$m=19456,t=2,p=1$bGVjdHVyZXItbG9naW4tc2FsdA$vhmdsUYE/totFzciDMtHPOUP6q1oEfuHbrKgjiQkz/k',
-        'lecturer',
-        TRUE
-    ),
-    (
-        'Demo Admin',
-        'admin@lms.test',
-        '$argon2id$v=19$m=19456,t=2,p=1$YWRtaW4tbG9naW4tc2FsdA$f766sAwxGI+3KaoHnIDTHmBD84IkMi3vn9M7wkkIzC4',
-        'admin',
-        TRUE
-    )
-ON CONFLICT (email) DO UPDATE
-SET
-    display_name = EXCLUDED.display_name,
-    password_hash = EXCLUDED.password_hash,
-    role = EXCLUDED.role,
-    is_active = EXCLUDED.is_active,
-    updated_at = NOW();
-
 CREATE TABLE IF NOT EXISTS students (
     id SERIAL PRIMARY KEY,
-    user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(100) UNIQUE NOT NULL,
+    user_id INT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     age INT,
     programme VARCHAR(100),
     year_of_study INT
@@ -52,7 +19,7 @@ CREATE TABLE IF NOT EXISTS students (
 
 CREATE TABLE IF NOT EXISTS lecturers (
     id SERIAL PRIMARY KEY,
-    user_id INT UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    user_id INT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     staff_no VARCHAR(50) UNIQUE NOT NULL,
     department VARCHAR(100) NOT NULL
 );
@@ -250,5 +217,3 @@ CREATE TABLE IF NOT EXISTS final_grade_history (
 
 CREATE INDEX IF NOT EXISTS idx_final_grades_course_student ON final_grades (course_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_final_grade_history_final_grade_id ON final_grade_history (final_grade_id);
-
-ALTER TABLE quiz_monitoring_events ENABLE ROW LEVEL SECURITY;
