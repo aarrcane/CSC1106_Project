@@ -164,14 +164,6 @@ pub fn require_role(
     Ok(current_user)
 }
 
-pub fn require_auth(session: &Session) -> Result<CurrentUser, HttpResponse> {
-    let Some(current_user) = current_user(session)? else {
-        return Err(redirect("/login"));
-    };
-
-    Ok(current_user)
-}
-
 fn render_login(
     tmpl: &Tera,
     email_value: &str,
