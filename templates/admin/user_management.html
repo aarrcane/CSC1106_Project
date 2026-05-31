@@ -143,7 +143,7 @@
                                   <td class="text-capitalize">{{ u.role }}</td>
                                   <td>{% if u.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
                                   <td>{% if u.must_change_password %}<span class="badge bg-warning">No</span>{% else %}<span class="badge bg-success">Yes</span>{% endif %}</td>
-                                  <td class="small text-muted">{{ u.created_at }}</td>
+                                  <td class="small text-muted" data-iso="{{ u.created_at_iso }}">{{ u.created_at }}</td>
                                   <td>
                                     <div class="btn-group" role="group" aria-label="User actions">
                                       <button type="button" class="btn btn-outline-danger btn-sm">Deactivate</button>
@@ -168,6 +168,18 @@
                 </div>
   <script>
   (function(){
+    // Convert UTC ISO timestamps in data-iso attributes to local display
+    document.addEventListener('DOMContentLoaded', function(){
+      document.querySelectorAll('[data-iso]').forEach(function(el){
+        var iso = el.getAttribute('data-iso');
+        if(!iso) return;
+        try{
+          var d = new Date(iso);
+          // Use user's locale and options for a friendly display
+          el.textContent = d.toLocaleString();
+        }catch(e){ /* ignore parse errors */ }
+      });
+    });
     const roleSelect = document.getElementById('role');
     const studentFields = document.getElementById('studentFields');
     const lecturerFields = document.getElementById('lecturerFields');

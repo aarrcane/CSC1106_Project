@@ -53,6 +53,7 @@ struct AdminUserListItem {
     role: String,
     is_active: bool,
     must_change_password: bool,
+    created_at_iso: String,
     created_at: String,
 }
 
@@ -1805,12 +1806,13 @@ async fn admin_users_page(
     ctx.insert("form_action", "/admin/users/create");
 
     let users = sqlx::query_as::<_, AdminUserListItem>(
-        "SELECT id, display_name, email, role, is_active
-            , must_change_password
-            , to_char(created_at, 'YYYY-MM-DD HH24:MI') as created_at
+        r#"SELECT id, display_name, email, role, is_active
+         , must_change_password
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
          FROM users
          ORDER BY created_at DESC, id DESC
-         LIMIT 200",
+         LIMIT 200"#,
     )
     .fetch_all(db.get_ref())
     .await;
@@ -1818,6 +1820,16 @@ async fn admin_users_page(
     match users {
         Ok(rows) => ctx.insert("users", &rows),
         Err(_) => ctx.insert("users", &Vec::<AdminUserListItem>::new()),
+    }
+
+    // Pull any one-time success/temp password from session (set after PRG) and clear them
+    if let Ok(Some(msg)) = session.get::<String>("create_success") {
+        ctx.insert("create_success", &msg);
+        let _ = session.remove("create_success");
+    }
+    if let Ok(Some(tmp)) = session.get::<String>("temp_password") {
+        ctx.insert("temp_password", &tmp);
+        let _ = session.remove("temp_password");
     }
 
     let rendered = match tmpl.render("admin/user_management.html", &ctx) {
@@ -2002,32 +2014,34 @@ async fn admin_create_user(
             .body(format!("Failed to commit DB transaction: {error}"));
     }
 
-    let users = sqlx::query_as::<_, AdminUserListItem>(
-        "SELECT id, display_name, email, role, is_active, must_change_password, to_char(created_at, 'YYYY-MM-DD HH24:MI') as created_at
+    let _users = sqlx::query_as::<_, AdminUserListItem>(
+        r#"SELECT id, display_name, email, role, is_active, must_change_password,
+         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso,
+         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
          FROM users
          ORDER BY created_at DESC, id DESC
-         LIMIT 200",
+         LIMIT 200"#,
     )
     .fetch_all(db.get_ref())
     .await
     .unwrap_or_default();
 
-    set_admin_user_form_defaults(&mut ctx);
+    // Use Post-Redirect-Get: store one-time success/temp password in session, then redirect.
     if let Some(tmp) = temp_password {
-        ctx.insert("temp_password", &tmp);
+        if let Err(error) = session.insert("temp_password", &tmp) {
+            return HttpResponse::InternalServerError().body(format!("Failed to set session: {error}"));
+        }
     }
-    ctx.insert(
-        "create_success",
-        &format!("Created {role} account for {display_name}."),
-    );
-    ctx.insert("users", &users);
 
-    let rendered = match tmpl.render("admin/user_management.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
+    let success_msg = format!("Created {role} account for {display_name}.");
+    if let Err(error) = session.insert("create_success", &success_msg) {
+        return HttpResponse::InternalServerError().body(format!("Failed to set session: {error}"));
+    }
 
-    HttpResponse::Ok().content_type("text/html").body(rendered)
+    // Redirect to the users page (GET) to avoid form resubmission on reload
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+        .finish()
 }
 
 async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
