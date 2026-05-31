@@ -34,6 +34,7 @@ impl UserRole {
         }
     }
 
+    #[allow(dead_code)]
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Student => "Student",
@@ -42,6 +43,7 @@ impl UserRole {
         }
     }
 
+    #[allow(dead_code)]
     pub fn login_path(self) -> &'static str {
         "/login"
     }
