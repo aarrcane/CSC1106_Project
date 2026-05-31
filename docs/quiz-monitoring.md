@@ -22,13 +22,15 @@ This matches the existing project style because Bootstrap is also loaded by CDN.
 
 ## Supabase SQL Step
 
-For the existing shared Supabase database, run this file once in the Supabase SQL Editor:
+For a fresh shared Supabase database, run the root `schema.sql`.
+
+For an existing shared Supabase database that already has the older prototype tables, run this alignment file once in the Supabase SQL Editor:
 
 ```text
-sql/2026-05-29_add_quiz_monitoring_events.sql
+sql/2026-05-31_lms_schema_alignment.sql
 ```
 
-This creates `quiz_monitoring_events`, indexes it, and enables Row Level Security.
+This adds the normalized LMS support tables, keeps quiz monitoring aligned with the real `quizzes` table, adds indexes, and keeps `quiz_monitoring_events` protected with Row Level Security.
 
 ## Demo Flow
 

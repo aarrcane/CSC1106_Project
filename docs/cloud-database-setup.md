@@ -67,11 +67,17 @@ Password123!
 
 If login works, your local website is using the shared Supabase database.
 
-## Do Not Run Schema Changes Casually
+## Schema Updates
 
 The shared database is used by the whole group. Do not rerun `schema.sql`, delete tables, or reset data unless the team has agreed.
 
-If schema changes are needed later, make the change in Git first, review it as a group, then apply it once to Supabase.
+If the group agrees to update the current shared Supabase database to the normalized LMS schema, apply this file once in the Supabase SQL Editor:
+
+```text
+sql/2026-05-31_lms_schema_alignment.sql
+```
+
+For a brand new or reset database, apply the root `schema.sql` instead.
 
 ## References
 

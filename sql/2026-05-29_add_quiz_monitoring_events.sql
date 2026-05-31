@@ -1,6 +1,11 @@
+-- Legacy monitoring-only migration, kept for reference.
+-- Prefer running schema.sql on a fresh database, or run
+-- sql/2026-05-31_lms_schema_alignment.sql on an existing development database.
+
 CREATE TABLE IF NOT EXISTS quiz_monitoring_events (
     id SERIAL PRIMARY KEY,
-    quiz_id INT NOT NULL,
+    quiz_id INT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    quiz_attempt_id INT REFERENCES quiz_attempts(id) ON DELETE SET NULL,
     student_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     student_display_name VARCHAR(100) NOT NULL,
     event_type VARCHAR(40) NOT NULL CHECK (
@@ -21,6 +26,9 @@ CREATE TABLE IF NOT EXISTS quiz_monitoring_events (
     occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE quiz_monitoring_events
+    ADD COLUMN IF NOT EXISTS quiz_attempt_id INT REFERENCES quiz_attempts(id) ON DELETE SET NULL;
 
 CREATE INDEX IF NOT EXISTS idx_quiz_monitoring_events_quiz_id
     ON quiz_monitoring_events (quiz_id);

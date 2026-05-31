@@ -294,10 +294,21 @@ fn quiz_monitoring_ready(session: &Session, quiz_id: i32) -> Result<bool, HttpRe
 }
 
 async fn get_students(db: web::Data<PgPool>) -> impl Responder {
-    let result =
-        sqlx::query_as::<_, Student>("SELECT id, name, email, age FROM students ORDER BY id")
-            .fetch_all(db.get_ref())
-            .await;
+    let result = sqlx::query_as::<_, Student>(
+        "SELECT
+            s.id,
+            u.display_name AS name,
+            u.email,
+            CASE
+                WHEN s.date_of_birth IS NULL THEN NULL
+                ELSE EXTRACT(YEAR FROM AGE(s.date_of_birth))::INT
+            END AS age
+         FROM students s
+         JOIN users u ON u.id = s.user_id
+         ORDER BY s.id",
+    )
+    .fetch_all(db.get_ref())
+    .await;
 
     match result {
         Ok(students) => HttpResponse::Ok().json(students),
@@ -310,9 +321,39 @@ async fn create_student(
     student: web::Json<CreateStudent>,
 ) -> impl Responder {
     let result = sqlx::query_as::<_, Student>(
-        "INSERT INTO students (name, email, age)
-         VALUES ($1, $2, $3)
-         RETURNING id, name, email, age",
+        "WITH new_user AS (
+            INSERT INTO users (display_name, email, password_hash, role, is_active)
+            VALUES (
+                $1,
+                $2,
+                '$argon2id$v=19$m=19456,t=2,p=1$c3R1ZGVudC1sb2dpbi1zYWx0$YjXh5UzX4GL4BL/LSooMhnKaT0MjIE+cdvu5wQg3Yk0',
+                'student',
+                TRUE
+            )
+            RETURNING id, display_name, email
+         ),
+         new_student AS (
+            INSERT INTO students (user_id, student_no, date_of_birth)
+            SELECT
+                id,
+                'API-' || id::TEXT,
+                CASE
+                    WHEN $3::INT IS NULL THEN NULL
+                    ELSE (CURRENT_DATE - (($3::INT || ' years')::INTERVAL))::DATE
+                END
+            FROM new_user
+            RETURNING id, user_id, date_of_birth
+         )
+         SELECT
+            s.id,
+            u.display_name AS name,
+            u.email,
+            CASE
+                WHEN s.date_of_birth IS NULL THEN NULL
+                ELSE EXTRACT(YEAR FROM AGE(s.date_of_birth))::INT
+            END AS age
+         FROM new_student s
+         JOIN new_user u ON u.id = s.user_id",
     )
     .bind(&student.name)
     .bind(&student.email)
