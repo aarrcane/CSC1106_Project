@@ -1,0 +1,158 @@
+{% extends "base_student.html" %}
+
+{% block title %}Taking Quiz - LMS Portal{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <h4 class="fw-bold mb-0">{{ quiz.title }}</h4>
+    <p class="text-muted small mb-0">{{ quiz.course_code }} - {{ quiz.course_name }}</p>
+  </div>
+  <div class="text-end">
+    <div class="small text-muted">Time Remaining</div>
+    <div class="fw-bold fs-5" id="quizTimer" data-seconds="{{ quiz_seconds }}">{{ quiz.duration_mins }}:00</div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm mb-4">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+          <div>
+            <h5 class="fw-bold mb-0">Quiz Questions</h5>
+            <p class="text-muted small mb-0">{{ quiz.total_marks }} marks</p>
+          </div>
+          <span class="badge bg-success-subtle text-success rounded-pill">Monitoring required</span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <div class="alert alert-warning border-0 quiz-lock-alert" id="quizLockAlert">
+          <i class="bi bi-lock-fill me-2"></i>
+          Monitoring is reconnecting. Keep camera and microphone enabled.
+        </div>
+
+        <form id="quizAttemptForm" class="d-none" hidden style="display: none;">
+          {% for question in questions %}
+          <div class="quiz-question-block {% if not loop.last %}border-bottom pb-4 mb-4{% endif %}">
+            <div class="d-flex gap-3">
+              <div class="quiz-question-number">{{ question.number }}</div>
+              <div class="flex-grow-1">
+                <h6 class="fw-bold mb-3">{{ question.prompt }}</h6>
+                <div class="vstack gap-2">
+                  {% for option in question.options %}
+                  <label class="quiz-option">
+                    <input class="form-check-input me-2" type="radio" name="question_{{ question.number }}" value="{{ option }}" disabled>
+                    <span>{{ option }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+          <div class="d-flex align-items-center justify-content-end gap-2">
+            <a href="/student/quizzes" class="btn btn-outline-secondary">Leave Quiz</a>
+            <button type="button" class="btn btn-primary" id="submitQuizAttempt" disabled>
+              <i class="bi bi-check2-circle me-1"></i>Submit Attempt
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="card border-0 shadow-sm quiz-monitor-card"
+         id="quiz-monitor-root"
+         data-event-url="{{ monitoring_event_url }}"
+         data-ready-url="{{ monitoring_ready_url }}"
+         data-autostart="true">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div>
+            <h5 class="fw-bold mb-0">Activity Monitor</h5>
+            <p class="text-muted small mb-0">Monitoring continues during the quiz</p>
+          </div>
+          <span class="badge bg-secondary-subtle text-secondary rounded-pill" id="monitorOverallStatus">Starting</span>
+        </div>
+      </div>
+      <div class="card-body p-4">
+        <video id="monitorVideo" class="quiz-monitor-video mb-3" autoplay muted playsinline></video>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="cameraStatusDot"></span>
+              <span class="small fw-semibold" id="cameraStatusText">Camera idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="microphoneStatusDot"></span>
+              <span class="small fw-semibold" id="microphoneStatusText">Mic idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="faceStatusDot"></span>
+              <span class="small fw-semibold" id="faceStatusText">Face idle</span>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="monitor-status-tile">
+              <span class="monitor-dot bg-secondary" id="noiseStatusDot"></span>
+              <span class="small fw-semibold" id="noiseStatusText">Noise idle</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="d-grid gap-2 mb-3">
+          <button class="btn btn-primary" id="startMonitoringButton" type="button">
+            <i class="bi bi-camera-video me-1"></i>Restart Monitoring
+          </button>
+        </div>
+
+        <div class="small text-muted mb-2">Recent activity</div>
+        <div class="quiz-monitor-log" id="monitorEventLog">
+          <div class="text-muted small">No events logged yet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script type="module" src="/static/quiz_monitoring.js"></script>
+<script>
+  const quizTimer = document.getElementById('quizTimer');
+  let secondsRemaining = Number(quizTimer?.dataset.seconds || 0);
+
+  function renderQuizTimer() {
+    const minutes = Math.floor(secondsRemaining / 60);
+    const seconds = secondsRemaining % 60;
+    if (quizTimer) {
+      quizTimer.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    }
+  }
+
+  renderQuizTimer();
+  const quizTimerInterval = window.setInterval(() => {
+    secondsRemaining -= 1;
+    renderQuizTimer();
+
+    if (secondsRemaining <= 0) {
+      window.clearInterval(quizTimerInterval);
+      document.querySelectorAll('#quizAttemptForm input').forEach((input) => {
+        input.disabled = true;
+      });
+      const submitButton = document.getElementById('submitQuizAttempt');
+      if (submitButton) {
+        submitButton.disabled = true;
+      }
+      window.alert('Time is up for this mock quiz attempt.');
+    }
+  }, 1000);
+</script>
+{% endblock %}
