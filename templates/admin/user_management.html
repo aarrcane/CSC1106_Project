@@ -4,7 +4,200 @@
 
 {% block content %}
 <div class="container py-4">
-  <h4>User Management</h4>
-  <p class="text-muted">Placeholder page for user management.</p>
-</div>
+  <div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+      <h4 class="fw-bold mb-0">User Management</h4>
+      <p class="text-muted mb-0">Create student and lecturer accounts.</p>
+    </div>
+  </div>
+  <div class="row g-4">
+                  <div class="row">
+                    <div class="col-12">
+                      <div class="card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-white border-bottom py-3 px-4">
+                          <h6 class="fw-bold mb-0"><i class="bi bi-person-plus me-2 text-primary"></i>Create New Account</h6>
+                        </div>
+                        <div class="card-body px-4 py-3 admin-form">
+                          {% if create_error is defined and create_error != "" %}
+                          <div class="alert alert-danger" role="alert">{{ create_error }}</div>
+                          {% endif %}
+                          {% if create_success is defined and create_success != "" %}
+                          <div class="alert alert-success d-flex justify-content-between align-items-center" role="alert">
+                            <div>{{ create_success }}</div>
+                            {% if temp_password is defined and temp_password != "" %}
+                              <div class="ms-3"><strong>Temp password:</strong> <code class="small">{{ temp_password }}</code></div>
+                            {% endif %}
+                          </div>
+                          {% endif %}
+                          <form method="post" action="{{ form_action }}" id="createUserForm" novalidate>
+                            <div class="row g-3 align-items-end">
+                              <div class="col-12 col-md-4">
+                                <label for="display_name" class="form-label">Display Name</label>
+                                <input type="text" class="form-control" id="display_name" name="display_name" placeholder="e.g., Jane Doe" value="{{ form_display_name }}" required>
+                              </div>
+                              <div class="col-12 col-md-4">
+                                <label for="email" class="form-label">Email</label>
+                                <input type="email" class="form-control" id="email" name="email" placeholder="user@example.com" value="{{ form_email }}" required>
+                              </div>
+                              <div class="col-12 col-md-4">
+                                <label for="role" class="form-label">Role</label>
+                                <select class="form-select" id="role" name="role" required>
+                                  <option value="student" {% if form_role == "student" %}selected{% endif %}>Student</option>
+                                  <option value="lecturer" {% if form_role == "lecturer" %}selected{% endif %}>Lecturer</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div id="studentFields" class="mt-4 role-fields" data-role="student">
+                              <h6 class="fw-semibold">Student Profile</h6>
+                              <div class="row g-3">
+                                <div class="col-12 col-md-3">
+                                  <label for="age" class="form-label">Age</label>
+                                  <input type="number" class="form-control" id="age" name="age" min="1" placeholder="Optional" value="{{ form_age }}">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                  <label for="programme" class="form-label">Programme</label>
+                                  <select class="form-select" id="programme" name="programme">
+                                    <option value="">Select programme</option>
+                                    <option value="Computer Science" {% if form_programme == "Computer Science" %}selected{% endif %}>Computer Science</option>
+                                    <option value="Software Engineering" {% if form_programme == "Software Engineering" %}selected{% endif %}>Software Engineering</option>
+                                    <option value="Information Systems" {% if form_programme == "Information Systems" %}selected{% endif %}>Information Systems</option>
+                                    <option value="Data Science" {% if form_programme == "Data Science" %}selected{% endif %}>Data Science</option>
+                                    <option value="Cybersecurity" {% if form_programme == "Cybersecurity" %}selected{% endif %}>Cybersecurity</option>
+                                    <option value="Business Analytics" {% if form_programme == "Business Analytics" %}selected{% endif %}>Business Analytics</option>
+                                  </select>
+                                </div>
+                                <div class="col-12 col-md-3">
+                                  <label for="year_of_study" class="form-label">Year of Study</label>
+                                  <select class="form-select" id="year_of_study" name="year_of_study">
+                                    <option value="">Select year</option>
+                                    <option value="1" {% if form_year_of_study == "1" %}selected{% endif %}>Year 1</option>
+                                    <option value="2" {% if form_year_of_study == "2" %}selected{% endif %}>Year 2</option>
+                                    <option value="3" {% if form_year_of_study == "3" %}selected{% endif %}>Year 3</option>
+                                    <option value="4" {% if form_year_of_study == "4" %}selected{% endif %}>Year 4</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div id="lecturerFields" class="mt-4 role-fields" data-role="lecturer">
+                              <h6 class="fw-semibold">Lecturer Profile</h6>
+                              <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                  <label for="staff_no" class="form-label">Staff Number</label>
+                                  <input type="text" class="form-control" id="staff_no" name="staff_no" placeholder="e.g., ST-001" value="{{ form_staff_no }}">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                  <label for="department" class="form-label">Department</label>
+                                  <select class="form-select" id="department" name="department">
+                                    <option value="">Select department</option>
+                                    <option value="School of Computing" {% if form_department == "School of Computing" %}selected{% endif %}>School of Computing</option>
+                                    <option value="Department of Information Technology" {% if form_department == "Department of Information Technology" %}selected{% endif %}>Department of Information Technology</option>
+                                    <option value="Department of Software Engineering" {% if form_department == "Department of Software Engineering" %}selected{% endif %}>Department of Software Engineering</option>
+                                    <option value="Department of Data Science" {% if form_department == "Department of Data Science" %}selected{% endif %}>Department of Data Science</option>
+                                    <option value="Department of Cybersecurity" {% if form_department == "Department of Cybersecurity" %}selected{% endif %}>Department of Cybersecurity</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div class="mt-4 d-flex justify-content-end">
+                              <button type="submit" class="btn btn-primary btn-lms">
+                                <i class="bi bi-person-plus-fill me-2"></i>Create Account
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Users table -->
+                  <div class="row mt-4">
+                    <div class="col-12">
+                      <div class="card border-0 shadow-sm">
+                        <div class="card-header bg-white border-bottom py-3 px-4">
+                          <h6 class="fw-bold mb-0"><i class="bi bi-table me-2 text-secondary"></i>Users</h6>
+                        </div>
+                        <div class="card-body p-0">
+                          <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Display name</th>
+                                  <th>Email</th>
+                                  <th>Role</th>
+                                  <th>Active</th>
+                                  <th>Password changed</th>
+                                  <th>Created</th>
+                                  <th>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {% for u in users %}
+                                <tr>
+                                  <td>{{ u.id }}</td>
+                                  <td>{{ u.display_name }}</td>
+                                  <td class="small text-muted">{{ u.email }}</td>
+                                  <td class="text-capitalize">{{ u.role }}</td>
+                                  <td>{% if u.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
+                                  <td>{% if u.must_change_password %}<span class="badge bg-warning">No</span>{% else %}<span class="badge bg-success">Yes</span>{% endif %}</td>
+                                  <td class="small text-muted">{{ u.created_at }}</td>
+                                  <td>
+                                    <div class="btn-group" role="group" aria-label="User actions">
+                                      <button type="button" class="btn btn-outline-danger btn-sm">Deactivate</button>
+                                      <button type="button" class="btn btn-outline-secondary btn-sm">Update</button>
+                                      <button type="button" class="btn btn-outline-warning btn-sm">Reset Password</button>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {% endfor %}
+                                {% if users | length == 0 %}
+                                <tr>
+                                  <td colspan="8" class="text-center text-muted py-4">No users have been created yet.</td>
+                                </tr>
+                                {% endif %}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+  <script>
+  (function(){
+    const roleSelect = document.getElementById('role');
+    const studentFields = document.getElementById('studentFields');
+    const lecturerFields = document.getElementById('lecturerFields');
+    const programme = document.getElementById('programme');
+    const yearOfStudy = document.getElementById('year_of_study');
+    const department = document.getElementById('department');
+
+    function show(el){ if(el) el.style.display = ''; }
+    function hide(el){ if(el) el.style.display = 'none'; }
+
+    function syncRoleFields(){
+      const role = roleSelect?.value || 'student';
+      if(role === 'lecturer'){
+        show(lecturerFields);
+        hide(studentFields);
+        if(department) department.required = true;
+        if(programme) programme.required = false;
+        if(yearOfStudy) yearOfStudy.required = false;
+      } else {
+        show(studentFields);
+        hide(lecturerFields);
+        if(department) department.required = false;
+        if(programme) programme.required = true;
+        if(yearOfStudy) yearOfStudy.required = true;
+      }
+    }
+
+    roleSelect?.addEventListener('change', syncRoleFields);
+    // initialize
+    syncRoleFields();
+  })();
+  </script>
 {% endblock %}

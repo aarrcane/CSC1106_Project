@@ -8,6 +8,8 @@ use actix_web::{
 use tera::{Context, Tera};
 
 use dotenvy::dotenv;
+use argon2::{Argon2, PasswordHasher};
+use argon2::password_hash::{SaltString, rand_core::OsRng};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
 use std::env;
@@ -29,6 +31,29 @@ struct CreateStudent {
     name: String,
     email: String,
     age: Option<i32>,
+}
+
+#[derive(Deserialize, Clone)]
+struct AdminCreateUserForm {
+    display_name: String,
+    email: String,
+    role: String,
+    age: Option<String>,
+    programme: Option<String>,
+    year_of_study: Option<String>,
+    staff_no: Option<String>,
+    department: Option<String>,
+}
+
+#[derive(Serialize, FromRow)]
+struct AdminUserListItem {
+    id: i32,
+    display_name: String,
+    email: String,
+    role: String,
+    is_active: bool,
+    must_change_password: bool,
+    created_at: String,
 }
 
 #[derive(Serialize)]
@@ -283,6 +308,74 @@ fn quiz_monitoring_ready_key(quiz_id: i32) -> String {
     format!("quiz_{quiz_id}_monitoring_ready")
 }
 
+fn hash_password(password: &str) -> Result<String, String> {
+    let salt = SaltString::generate(&mut OsRng);
+    Argon2::default()
+        .hash_password(password.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|error| format!("Failed to hash password: {error}"))
+}
+
+fn generate_temp_password(len: usize) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+    salt.as_str().chars().take(len).collect()
+}
+
+fn set_admin_user_page_base(ctx: &mut Context, user: &auth::CurrentUser) {
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "users");
+    ctx.insert("is_admin", &true);
+}
+
+fn set_admin_user_form_defaults(ctx: &mut Context) {
+    ctx.insert("form_display_name", "");
+    ctx.insert("form_email", "");
+    ctx.insert("form_role", "student");
+    ctx.insert("form_age", "");
+    ctx.insert("form_programme", "");
+    ctx.insert("form_year_of_study", "");
+    ctx.insert("form_staff_no", "");
+    ctx.insert("form_department", "");
+}
+
+fn set_admin_user_form_values(ctx: &mut Context, form: &AdminCreateUserForm) {
+    ctx.insert("form_display_name", form.display_name.trim());
+    ctx.insert("form_email", form.email.trim());
+    ctx.insert("form_role", form.role.trim());
+    ctx.insert("form_age", form.age.as_deref().unwrap_or("").trim());
+    ctx.insert(
+        "form_programme",
+        form.programme.as_deref().unwrap_or("").trim(),
+    );
+    ctx.insert(
+        "form_year_of_study",
+        form.year_of_study.as_deref().unwrap_or("").trim(),
+    );
+    ctx.insert("form_staff_no", form.staff_no.as_deref().unwrap_or("").trim());
+    ctx.insert(
+        "form_department",
+        form.department.as_deref().unwrap_or("").trim(),
+    );
+}
+
+fn parse_optional_i32(value: Option<&str>, field_name: &str) -> Result<Option<i32>, String> {
+    let Some(raw) = value else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    trimmed
+        .parse::<i32>()
+        .map(Some)
+        .map_err(|_| format!("{field_name} must be a whole number."))
+}
+
 fn quiz_monitoring_ready(session: &Session, quiz_id: i32) -> Result<bool, HttpResponse> {
     session
         .get::<bool>(&quiz_monitoring_ready_key(quiz_id))
@@ -343,8 +436,12 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
 }
 
 //TODO: Add session handling
-async fn student_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let _user = match auth::require_role(&session, UserRole::Student) {
+async fn student_dashboard(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -354,9 +451,24 @@ async fn student_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Resp
     let notifications: Vec<NotificationContext> = vec![];
     ctx.insert("notifications", &notifications);
 
-    // TODO: Replace with session-based user lookup
-    ctx.insert("student_name", "Lee Zhi Yu");
-    ctx.insert("student_id", "2501129");
+    // Use logged-in user's display name
+    ctx.insert("student_name", &user.display_name);
+
+    // Attempt to fetch student record to show student id (if exists)
+    let student_id_opt = sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM students WHERE user_id = $1 LIMIT 1",
+    )
+    .bind(user.id)
+    .fetch_optional(db.get_ref())
+    .await
+    .ok()
+    .flatten();
+
+    if let Some(sid) = student_id_opt {
+        ctx.insert("student_id", &sid.to_string());
+    } else {
+        ctx.insert("student_id", "");
+    }
     ctx.insert("current_trimester", "2025/26 Trimester 3");
     ctx.insert("current_date", "Monday, 25 May 2026");
 
@@ -1677,24 +1789,244 @@ async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Respon
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn admin_users_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn admin_users_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
 
     let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<NotificationContext>::new());
-    ctx.insert("active_page", "users");
-    ctx.insert("is_admin", &true);
+    set_admin_user_page_base(&mut ctx, &user);
+    set_admin_user_form_defaults(&mut ctx);
+    ctx.insert("form_action", "/admin/users/create");
+
+    let users = sqlx::query_as::<_, AdminUserListItem>(
+        "SELECT id, display_name, email, role, is_active
+            , must_change_password
+            , to_char(created_at, 'YYYY-MM-DD HH24:MI') as created_at
+         FROM users
+         ORDER BY created_at DESC, id DESC
+         LIMIT 200",
+    )
+    .fetch_all(db.get_ref())
+    .await;
+
+    match users {
+        Ok(rows) => ctx.insert("users", &rows),
+        Err(_) => ctx.insert("users", &Vec::<AdminUserListItem>::new()),
+    }
 
     let rendered = match tmpl.render("admin/user_management.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn admin_create_user(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<AdminCreateUserForm>,
+) -> impl Responder {
+    let user = match auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let form = form.into_inner();
+    let role = form.role.trim().to_lowercase();
+    let display_name = form.display_name.trim();
+    let email = form.email.trim().to_lowercase();
+
+    let mut ctx = Context::new();
+    set_admin_user_page_base(&mut ctx, &user);
+    set_admin_user_form_values(&mut ctx, &form);
+    ctx.insert("form_action", "/admin/users/create");
+
+    let mut validation_error: Option<String> = None;
+    if display_name.is_empty() || email.is_empty() {
+        validation_error = Some("Display name and email are required.".to_string());
+    } else if role != "student" && role != "lecturer" {
+        validation_error = Some("Role must be either student or lecturer.".to_string());
+    }
+
+    let age = match parse_optional_i32(form.age.as_deref(), "Age") {
+        Ok(value) => value,
+        Err(message) => {
+            validation_error = Some(message);
+            None
+        }
+    };
+    let year_of_study = match parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
+        Ok(value) => value,
+        Err(message) => {
+            validation_error = Some(message);
+            None
+        }
+    };
+
+    if validation_error.is_none() {
+        if let Some(year) = year_of_study {
+            if !(1..=4).contains(&year) {
+                validation_error = Some("Year of study must be 1, 2, 3, or 4.".to_string());
+            }
+        }
+    }
+
+    if validation_error.is_none() && role == "student" {
+        if form.programme.as_deref().unwrap_or("").trim().is_empty() {
+            validation_error = Some("Programme is required for students.".to_string());
+        } else if year_of_study.is_none() {
+            validation_error = Some("Year of study is required for students.".to_string());
+        }
+    }
+
+    if validation_error.is_none() && role == "lecturer" {
+        if form.staff_no.as_deref().unwrap_or("").trim().is_empty()
+            || form.department.as_deref().unwrap_or("").trim().is_empty()
+        {
+            validation_error = Some("Staff number and department are required for lecturers.".to_string());
+        }
+    }
+
+    if let Some(message) = validation_error {
+        ctx.insert("create_error", &message);
+        ctx.insert("users", &Vec::<AdminUserListItem>::new());
+        let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+            Ok(html) => html,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+    }
+
+    // Always generate a temporary password (admin does not supply it)
+    let tmp = generate_temp_password(12);
+    let temp_password = Some(tmp.clone());
+    let password_to_hash = tmp;
+
+    let password_hash = match hash_password(&password_to_hash) {
+        Ok(hash) => hash,
+        Err(error) => {
+            ctx.insert("create_error", &error);
+            ctx.insert("users", &Vec::<AdminUserListItem>::new());
+            let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+                Ok(html) => html,
+                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+            };
+            return HttpResponse::InternalServerError().content_type("text/html").body(rendered);
+        }
+    };
+
+    let mut tx = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start DB transaction: {error}"));
+        }
+    };
+
+    let must_change = temp_password.is_some();
+
+    let user_id_result = sqlx::query_scalar(
+        "INSERT INTO users (display_name, email, password_hash, role, is_active, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id",
+    )
+    .bind(display_name)
+    .bind(&email)
+    .bind(&password_hash)
+    .bind(&role)
+    .bind(true)
+    .bind(must_change)
+    .fetch_one(&mut *tx)
+    .await;
+
+    let user_id: i32 = match user_id_result {
+        Ok(id) => id,
+        Err(error) => {
+            let _ = tx.rollback().await;
+            ctx.insert("create_error", &format!("Failed to create user account: {error}"));
+                ctx.insert("users", &Vec::<AdminUserListItem>::new());
+            let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+                Ok(html) => html,
+                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+            };
+            return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+        }
+    };
+
+    let profile_result = if role == "student" {
+        sqlx::query(
+            "INSERT INTO students (user_id, age, programme, year_of_study)
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(user_id)
+        .bind(age)
+        .bind(form.programme.as_deref().map(str::trim).filter(|v| !v.is_empty()))
+        .bind(year_of_study)
+        .execute(&mut *tx)
+        .await
+    } else {
+        sqlx::query(
+            "INSERT INTO lecturers (user_id, staff_no, department)
+             VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(form.staff_no.as_deref().unwrap_or("").trim())
+        .bind(form.department.as_deref().unwrap_or("").trim())
+        .execute(&mut *tx)
+        .await
+    };
+
+    if let Err(error) = profile_result {
+        let _ = tx.rollback().await;
+        ctx.insert(
+            "create_error",
+            &format!("Failed to create {} profile: {error}", role),
+        );
+        ctx.insert("users", &Vec::<AdminUserListItem>::new());
+        let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+            Ok(html) => html,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+    }
+
+    if let Err(error) = tx.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit DB transaction: {error}"));
+    }
+
+    let users = sqlx::query_as::<_, AdminUserListItem>(
+        "SELECT id, display_name, email, role, is_active, must_change_password, to_char(created_at, 'YYYY-MM-DD HH24:MI') as created_at
+         FROM users
+         ORDER BY created_at DESC, id DESC
+         LIMIT 200",
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    set_admin_user_form_defaults(&mut ctx);
+    if let Some(tmp) = temp_password {
+        ctx.insert("temp_password", &tmp);
+    }
+    ctx.insert(
+        "create_success",
+        &format!("Created {role} account for {display_name}."),
+    );
+    ctx.insert("users", &users);
+
+    let rendered = match tmpl.render("admin/user_management.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
@@ -1782,6 +2114,114 @@ async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl Respo
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+#[derive(Deserialize)]
+struct PasswordChangeForm {
+    new_password: String,
+    confirm_password: String,
+}
+
+async fn password_change_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match auth::require_auth(&session) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+
+    let mut ctx = Context::new();
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("active_page", "");
+    ctx.insert("error_message", "");
+    let is_admin = matches!(UserRole::from_slug(&user.role), Some(UserRole::Admin));
+    let is_lecturer = matches!(UserRole::from_slug(&user.role), Some(UserRole::Lecturer));
+    ctx.insert("is_admin", &is_admin);
+    ctx.insert("is_lecturer", &is_lecturer);
+
+    let rendered = match tmpl.render("password_change.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+async fn password_change_submit(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<PasswordChangeForm>,
+) -> impl Responder {
+    let user = match auth::require_auth(&session) {
+        Ok(u) => u,
+        Err(resp) => return resp,
+    };
+
+    let new = form.new_password.trim();
+    let confirm = form.confirm_password.trim();
+
+    if new.len() < 8 {
+        let mut ctx = Context::new();
+        ctx.insert("display_name", &user.display_name);
+        ctx.insert("student_name", &user.display_name);
+        ctx.insert("student_id", "");
+        ctx.insert("notifications", &Vec::<NotificationContext>::new());
+        ctx.insert("error_message", "Password must be at least 8 characters long.");
+        let is_admin = matches!(UserRole::from_slug(&user.role), Some(UserRole::Admin));
+        let is_lecturer = matches!(UserRole::from_slug(&user.role), Some(UserRole::Lecturer));
+        ctx.insert("is_admin", &is_admin);
+        ctx.insert("is_lecturer", &is_lecturer);
+        let rendered = match tmpl.render("password_change.html", &ctx) {
+            Ok(html) => html,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+    }
+
+    if new != confirm {
+        let mut ctx = Context::new();
+        ctx.insert("display_name", &user.display_name);
+        ctx.insert("student_name", &user.display_name);
+        ctx.insert("student_id", "");
+        ctx.insert("notifications", &Vec::<NotificationContext>::new());
+        ctx.insert("error_message", "Passwords do not match.");
+        let is_admin = matches!(UserRole::from_slug(&user.role), Some(UserRole::Admin));
+        let is_lecturer = matches!(UserRole::from_slug(&user.role), Some(UserRole::Lecturer));
+        ctx.insert("is_admin", &is_admin);
+        ctx.insert("is_lecturer", &is_lecturer);
+        let rendered = match tmpl.render("password_change.html", &ctx) {
+            Ok(html) => html,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+    }
+
+    let password_hash = match hash_password(new) {
+        Ok(h) => h,
+        Err(e) => return HttpResponse::InternalServerError().body(e),
+    };
+
+    let update_result = sqlx::query(
+        "UPDATE users SET password_hash = $1, must_change_password = FALSE, updated_at = NOW() WHERE id = $2",
+    )
+    .bind(&password_hash)
+    .bind(user.id)
+    .execute(db.get_ref())
+    .await;
+
+    if let Err(error) = update_result {
+        return HttpResponse::InternalServerError().body(format!("Failed to update password: {error}"));
+    }
+
+    // Redirect to user's home page based on role
+    let Some(role_enum) = UserRole::from_slug(&user.role) else {
+        return HttpResponse::SeeOther().insert_header((actix_web::http::header::LOCATION, "/")).finish();
+    };
+
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, role_enum.home_path()))
+        .finish()
+}
+
 fn session_key() -> Key {
     let secret =
         env::var("SESSION_SECRET").expect("SESSION_SECRET must be set in .env for login sessions");
@@ -1830,6 +2270,10 @@ async fn main() -> std::io::Result<()> {
             .route("/login", web::post().to(auth::login_submit))
             .route("/logout", web::post().to(auth::logout))
 
+            // Password change (first-login)
+            .route("/password/change", web::get().to(password_change_page))
+            .route("/password/change", web::post().to(password_change_submit))
+
             // Student Routes
             .route("/student/dashboard", web::get().to(student_dashboard))
             .route("/student/courses", web::get().to(student_courses))
@@ -1859,6 +2303,7 @@ async fn main() -> std::io::Result<()> {
             // Admin Routes
             .route("/admin/dashboard", web::get().to(admin_dashboard))
             .route("/admin/users", web::get().to(admin_users_page))
+            .route("/admin/users/create", web::post().to(admin_create_user))
             .route("/admin/courses", web::get().to(admin_courses_page))
             .route("/admin/content", web::get().to(admin_content_page))
             .route("/admin/settings", web::get().to(admin_settings_page))

@@ -392,6 +392,14 @@ body.login-landing {
 .btn-lms-sm   { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); border-radius: var(--radius-sm); }
 .btn-lms-icon { padding: var(--space-2); border-radius: var(--radius-md); }
 
+/* Admin page specific tweaks */
+.admin-form .form-label { font-weight: 600; color: var(--color-text); }
+.admin-form .form-control { border-radius: 8px; }
+.admin-form .card-body { padding: 1.25rem; }
+.role-fields { background: var(--color-surface-2); padding: 0.85rem; border-radius: 8px; margin-top: 0.6rem; }
+.table .btn { margin-right: 0.35rem; }
+.user-actions .btn { margin-right: 0.35rem; }
+
 
 /* ── Stats bar (course page) ── */
 .course-stats-bar {

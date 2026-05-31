@@ -64,6 +64,7 @@ struct User {
     password_hash: String,
     role: String,
     is_active: bool,
+    must_change_password: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +116,11 @@ pub async fn login_submit(
             .body(format!("Failed to create login session: {error}"));
     }
 
+    if user.must_change_password {
+        // keep session, but force password change
+        return redirect("/password/change");
+    }
+
     let Some(role) = UserRole::from_slug(&user.role) else {
         return HttpResponse::InternalServerError().body("Unknown user role");
     };
@@ -158,6 +164,14 @@ pub fn require_role(
     Ok(current_user)
 }
 
+pub fn require_auth(session: &Session) -> Result<CurrentUser, HttpResponse> {
+    let Some(current_user) = current_user(session)? else {
+        return Err(redirect("/login"));
+    };
+
+    Ok(current_user)
+}
+
 fn render_login(
     tmpl: &Tera,
     email_value: &str,
@@ -182,7 +196,8 @@ fn render_login(
 async fn find_user_by_email(db: &PgPool, email: &str) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
         "SELECT id, display_name, password_hash, role, is_active
-         FROM users
+            , must_change_password
+            FROM users
          WHERE LOWER(email) = $1",
     )
     .bind(email)
