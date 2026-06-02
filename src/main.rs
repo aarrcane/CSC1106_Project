@@ -11,7 +11,7 @@ use dotenvy::dotenv;
 use argon2::{Argon2, PasswordHasher};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, postgres::PgPoolOptions};
+use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
 use std::env;
 
 mod auth;
@@ -315,16 +315,122 @@ fn session_key() -> Key {
     Key::from(secret.as_bytes())
 }
 
-async fn password_change_page(tmpl: web::Data<Tera>, _session: Session) -> impl Responder {
-    // Minimal page: render template if available
-    let ctx = Context::new();
-    let rendered = tmpl.render("password_change.html", &ctx).unwrap_or_else(|e| e.to_string());
+#[derive(Deserialize)]
+struct PasswordChangeForm {
+    new_password: String,
+    confirm_password: String,
+}
+
+async fn password_change_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let display_name = session
+        .get::<String>("display_name")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "User".to_string());
+    let role = session
+        .get::<String>("role")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let mut ctx = Context::new();
+    ctx.insert("student_name", &display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<NotificationContext>::new());
+    ctx.insert("is_admin", &(role == "admin"));
+    ctx.insert("is_lecturer", &(role == "lecturer"));
+
+    let rendered = tmpl
+        .render("password_change.html", &ctx)
+        .unwrap_or_else(|e| e.to_string());
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-async fn password_change_submit(_session: Session) -> impl Responder {
-    // Placeholder: clear the must_change flag in real implementation
-    HttpResponse::SeeOther().insert_header(("Location", "/")).finish()
+async fn password_change_submit(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<PasswordChangeForm>,
+) -> impl Responder {
+    let display_name = session
+        .get::<String>("display_name")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "User".to_string());
+    let role = session
+        .get::<String>("role")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    if form.new_password.len() < 8 {
+        let mut ctx = Context::new();
+        ctx.insert("student_name", &display_name);
+        ctx.insert("student_id", "");
+        ctx.insert("notifications", &Vec::<NotificationContext>::new());
+        ctx.insert("is_admin", &(role == "admin"));
+        ctx.insert("is_lecturer", &(role == "lecturer"));
+        ctx.insert("error_message", "Password must be at least 8 characters long.");
+
+        let rendered = tmpl
+            .render("password_change.html", &ctx)
+            .unwrap_or_else(|e| e.to_string());
+        return HttpResponse::Ok().content_type("text/html").body(rendered);
+    }
+
+    if form.new_password != form.confirm_password {
+        let mut ctx = Context::new();
+        ctx.insert("student_name", &display_name);
+        ctx.insert("student_id", "");
+        ctx.insert("notifications", &Vec::<NotificationContext>::new());
+        ctx.insert("is_admin", &(role == "admin"));
+        ctx.insert("is_lecturer", &(role == "lecturer"));
+        ctx.insert("error_message", "Passwords do not match.");
+
+        let rendered = tmpl
+            .render("password_change.html", &ctx)
+            .unwrap_or_else(|e| e.to_string());
+        return HttpResponse::Ok().content_type("text/html").body(rendered);
+    }
+
+    let Some(user_id) = session.get::<i32>("user_id").ok().flatten() else {
+        return HttpResponse::SeeOther()
+            .insert_header(("Location", "/login"))
+            .finish();
+    };
+
+    let password_hash = match hash_password(&form.new_password) {
+        Ok(hash) => hash,
+        Err(error) => {
+            return HttpResponse::InternalServerError().body(error);
+        }
+    };
+
+    let result = sqlx::query(
+        r#"UPDATE users
+           SET password_hash = $1,
+               must_change_password = FALSE
+         WHERE id = $2"#,
+    )
+    .bind(&password_hash)
+    .bind(user_id)
+    .execute(db.get_ref())
+    .await;
+
+    if let Err(error) = result {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to update password: {error}"));
+    }
+
+    let Some(role) = auth::UserRole::from_slug(&role) else {
+        return HttpResponse::SeeOther()
+            .insert_header(("Location", "/"))
+            .finish();
+    };
+
+    HttpResponse::SeeOther()
+        .insert_header(("Location", role.home_path()))
+        .finish()
 }
 
 async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
