@@ -519,6 +519,9 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
             // Lecturer Routes
             .route("/lecturer/dashboard", web::get().to(lecturer::lecturer_dashboard))
             .route("/lecturer/courses", web::get().to(lecturer::lecturer_courses_page))
+            .route("/lecturer/courses/create", web::post().to(lecturer::create_course))
+            .route("/lecturer/courses/{id}/edit",   web::post().to(lecturer::edit_course))
+            .route("/lecturer/courses/{id}/delete", web::post().to(lecturer::delete_course))
             .route("/lecturer/assignments", web::get().to(lecturer::lecturer_assignments_page))
             .route("/lecturer/quizzes", web::get().to(lecturer::lecturer_quizzes_page))
             .route("/lecturer/grades", web::get().to(lecturer::lecturer_grades_page))
