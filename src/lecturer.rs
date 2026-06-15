@@ -512,6 +512,9 @@ pub async fn delete_course(
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
 
+    let course_folder = format!("uploads/courses/{}", course_id);
+    let _ = std::fs::remove_dir_all(&course_folder);
+
     let result = sqlx::query!(
         "DELETE FROM courses WHERE id = $1 AND lecturer_id = $2",
         course_id,
