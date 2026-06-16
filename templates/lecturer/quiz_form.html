@@ -1,0 +1,274 @@
+{% extends "base_lecturer.html" %}
+{% block title %}{% if mode == "edit" %}Edit Quiz{% else %}New Quiz{% endif %} – Lecturer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4" style="max-width: 960px;">
+
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <a href="/lecturer/quizzes/manage" class="btn btn-light btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <h4 class="fw-bold mb-0">{% if mode == "edit" %}Edit Quiz{% else %}Create Quiz{% endif %}</h4>
+  </div>
+
+  <div id="alertBox" class="alert alert-danger d-none" role="alert"></div>
+
+  {% if courses | length == 0 %}
+    <div class="alert alert-warning">
+      You don't own any courses yet, so there's nowhere to attach a quiz. Ask an admin to assign you a course first.
+    </div>
+  {% endif %}
+
+  <form id="quizForm">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-body">
+        <h6 class="fw-bold mb-3">Details</h6>
+        <div class="row g-3">
+          <div class="col-md-8">
+            <label class="form-label">Title</label>
+            <input type="text" id="title" class="form-control" placeholder="e.g. Quiz 1 – Web Basics" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Course</label>
+            <select id="course_id" class="form-select" required>
+              <option value="" disabled selected>Choose…</option>
+              {% for c in courses %}
+              <option value="{{ c.id }}">{{ c.course_code }} — {{ c.course_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description <span class="text-muted small">(optional)</span></label>
+            <textarea id="description" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Opens at</label>
+            <input type="datetime-local" id="open_at" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Closes at</label>
+            <input type="datetime-local" id="close_at" class="form-control" required>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="fw-bold mb-0">Questions <span id="qCount" class="text-muted fw-normal"></span></h6>
+      <span class="text-muted small">Total marks: <strong id="totalMarks">0</strong></span>
+    </div>
+    <div id="questions"></div>
+
+    <button type="button" id="addQuestion" class="btn btn-outline-primary w-100 mb-4">
+      <i class="bi bi-plus-lg me-1"></i> Add Question
+    </button>
+
+    <div class="d-flex justify-content-end gap-2 pb-5">
+      <a href="/lecturer/quizzes/manage" class="btn btn-light">Cancel</a>
+      <button type="submit" id="saveBtn" class="btn btn-primary">
+        {% if mode == "edit" %}Save Changes{% else %}Create Quiz{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+
+<template id="qTemplate">
+  <div class="card shadow-sm border-0 mb-3 q-block">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-start mb-2">
+        <span class="badge bg-primary-subtle text-primary-emphasis q-number">Question</span>
+        <button type="button" class="btn btn-sm btn-outline-danger remove-q"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Question text</label>
+        <textarea class="form-control q-text" rows="2"></textarea>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label">Type</label>
+          <select class="form-select q-type">
+            <option value="multiple_choice">Multiple choice</option>
+            <option value="true_false">True / False</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Marks</label>
+          <input type="number" class="form-control q-marks" min="1" value="1">
+        </div>
+      </div>
+      <label class="form-label">Options <span class="text-muted small">(select the correct one)</span></label>
+      <div class="options-wrap mb-2"></div>
+      <button type="button" class="btn btn-sm btn-outline-secondary add-option"><i class="bi bi-plus"></i> Add option</button>
+    </div>
+  </div>
+</template>
+
+<template id="optTemplate">
+  <div class="input-group mb-2 opt-row">
+    <span class="input-group-text">
+      <input type="radio" class="form-check-input mt-0 opt-correct" name="correct-PLACEHOLDER">
+    </span>
+    <input type="text" class="form-control opt-text" placeholder="Option text">
+    <button type="button" class="btn btn-outline-danger remove-opt"><i class="bi bi-x"></i></button>
+  </div>
+</template>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const FORM_ACTION = "{{ form_action }}";
+  const QUIZ = {% if quiz %}{{ quiz | json_encode() | safe }}{% else %}null{% endif %};
+
+  const questionsEl = document.getElementById("questions");
+  const qTemplate   = document.getElementById("qTemplate");
+  const optTemplate = document.getElementById("optTemplate");
+  const alertBox    = document.getElementById("alertBox");
+  let qSeq = 0;
+
+  function showError(msg) { alertBox.textContent = msg; alertBox.classList.remove("d-none"); window.scrollTo({top:0,behavior:"smooth"}); }
+  function clearError() { alertBox.classList.add("d-none"); }
+
+  function newOptionRow(groupId, text = "", correct = false) {
+    const frag = optTemplate.content.cloneNode(true);
+    const row = frag.querySelector(".opt-row");
+    const radio = row.querySelector(".opt-correct");
+    radio.name = "correct-" + groupId;
+    radio.checked = correct;
+    row.querySelector(".opt-text").value = text;
+    row.querySelector(".remove-opt").addEventListener("click", () => {
+      const wrap = row.parentElement;
+      if (wrap.querySelectorAll(".opt-row").length > 2) row.remove();
+    });
+    return row;
+  }
+
+  function applyTypeRules(block) {
+    const type = block.querySelector(".q-type").value;
+    const wrap = block.querySelector(".options-wrap");
+    const addBtn = block.querySelector(".add-option");
+    if (type === "true_false") {
+      const groupId = block.dataset.group;
+      wrap.innerHTML = "";
+      wrap.appendChild(newOptionRow(groupId, "True", true));
+      wrap.appendChild(newOptionRow(groupId, "False", false));
+      wrap.querySelectorAll(".opt-text").forEach(i => i.setAttribute("readonly", "readonly"));
+      wrap.querySelectorAll(".remove-opt").forEach(b => b.classList.add("d-none"));
+      addBtn.classList.add("d-none");
+    } else {
+      addBtn.classList.remove("d-none");
+      wrap.querySelectorAll(".opt-text").forEach(i => i.removeAttribute("readonly"));
+      wrap.querySelectorAll(".remove-opt").forEach(b => b.classList.remove("d-none"));
+    }
+  }
+
+  function addQuestion(data = null) {
+    const frag = qTemplate.content.cloneNode(true);
+    const block = frag.querySelector(".q-block");
+    const groupId = "g" + (qSeq++);
+    block.dataset.group = groupId;
+
+    block.querySelector(".remove-q").addEventListener("click", () => { block.remove(); renumber(); recalc(); });
+    block.querySelector(".q-marks").addEventListener("input", recalc);
+    block.querySelector(".q-type").addEventListener("change", () => applyTypeRules(block));
+    block.querySelector(".add-option").addEventListener("click", () => {
+      block.querySelector(".options-wrap").appendChild(newOptionRow(groupId));
+    });
+
+    const wrap = block.querySelector(".options-wrap");
+    if (data) {
+      block.querySelector(".q-text").value = data.question_text || "";
+      block.querySelector(".q-type").value = data.question_type || "multiple_choice";
+      block.querySelector(".q-marks").value = data.marks || 1;
+      (data.options || []).forEach(o => wrap.appendChild(newOptionRow(groupId, o.option_text, o.is_correct)));
+    } else {
+      wrap.appendChild(newOptionRow(groupId, "", true));
+      wrap.appendChild(newOptionRow(groupId, "", false));
+    }
+
+    questionsEl.appendChild(block);
+    if (data && data.question_type === "true_false") applyTypeRules(block);
+    renumber(); recalc();
+  }
+
+  function renumber() {
+    const blocks = questionsEl.querySelectorAll(".q-block");
+    blocks.forEach((b, i) => b.querySelector(".q-number").textContent = "Question " + (i + 1));
+    document.getElementById("qCount").textContent = "(" + blocks.length + ")";
+  }
+  function recalc() {
+    let t = 0;
+    questionsEl.querySelectorAll(".q-marks").forEach(i => t += parseInt(i.value || "0", 10));
+    document.getElementById("totalMarks").textContent = t;
+  }
+
+  function collect() {
+    const questions = [];
+    for (const block of questionsEl.querySelectorAll(".q-block")) {
+      const options = [];
+      block.querySelectorAll(".opt-row").forEach(row => options.push({
+        option_text: row.querySelector(".opt-text").value.trim(),
+        is_correct: row.querySelector(".opt-correct").checked,
+      }));
+      questions.push({
+        question_text: block.querySelector(".q-text").value.trim(),
+        question_type: block.querySelector(".q-type").value,
+        marks: parseInt(block.querySelector(".q-marks").value || "0", 10),
+        options,
+      });
+    }
+    return {
+      course_id: parseInt(document.getElementById("course_id").value, 10),
+      title: document.getElementById("title").value.trim(),
+      description: document.getElementById("description").value.trim() || null,
+      open_at: document.getElementById("open_at").value,
+      close_at: document.getElementById("close_at").value,
+      questions,
+    };
+  }
+
+  document.getElementById("addQuestion").addEventListener("click", () => addQuestion());
+
+  document.getElementById("quizForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    clearError();
+    const payload = collect();
+    if (!payload.title) return showError("Please enter a title.");
+    if (!payload.course_id) return showError("Please choose a course.");
+    if (!payload.open_at || !payload.close_at) return showError("Set the open and close times.");
+    if (payload.close_at <= payload.open_at) return showError("Close time must be after open time.");
+    if (payload.questions.length === 0) return showError("Add at least one question.");
+
+    const btn = document.getElementById("saveBtn");
+    btn.disabled = true;
+    try {
+      const res = await fetch(FORM_ACTION, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+      });
+      const ct = res.headers.get("content-type") || "";
+      const data = ct.includes("application/json") ? await res.json() : { ok: res.ok, message: await res.text() };
+      if (res.ok && data.ok) {
+        window.location.href = data.redirect || "/lecturer/quizzes/manage";
+      } else {
+        showError(data.message || "Could not save the quiz.");
+        btn.disabled = false;
+      }
+    } catch (err) {
+      showError("Network error: " + err.message);
+      btn.disabled = false;
+    }
+  });
+
+  if (QUIZ) {
+    document.getElementById("title").value = QUIZ.title || "";
+    document.getElementById("description").value = QUIZ.description || "";
+    document.getElementById("open_at").value = QUIZ.open_at || "";
+    document.getElementById("close_at").value = QUIZ.close_at || "";
+    document.getElementById("course_id").value = QUIZ.course_id;
+    (QUIZ.questions || []).forEach(q => addQuestion(q));
+    if (!QUIZ.questions || QUIZ.questions.length === 0) addQuestion();
+  } else {
+    addQuestion();
+  }
+</script>
+{% endblock %}

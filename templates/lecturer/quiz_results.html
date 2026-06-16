@@ -1,0 +1,75 @@
+{% extends "base_lecturer.html" %}
+{% block title %}Quiz Results – Lecturer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4" style="max-width: 960px;">
+
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <a href="/lecturer/quizzes/manage" class="btn btn-light btn-sm"><i class="bi bi-arrow-left"></i></a>
+    <div>
+      <h4 class="fw-bold mb-0">{{ quiz_title }}</h4>
+      <span class="text-muted small">{{ course_code }} · out of {{ total_marks }} marks</span>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-4">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Submissions</div>
+        <div class="fs-3 fw-bold">{{ attempt_total }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-4">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Average score</div>
+        <div class="fs-3 fw-bold">{{ avg_pct }}%</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+      {% if attempts | length == 0 %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-clipboard-x fs-1 d-block mb-2"></i>
+          No submissions yet.
+        </div>
+      {% else %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Student</th>
+              <th>Email</th>
+              <th>Submitted</th>
+              <th class="text-center">Score</th>
+              <th class="text-center">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in attempts %}
+            <tr>
+              <td class="ps-3 fw-semibold">{{ a.student_name }}</td>
+              <td class="small text-muted">{{ a.student_email }}</td>
+              <td class="small text-muted">{{ a.submitted_at | default(value="—") }}</td>
+              <td class="text-center">{% if a.score or a.score == 0 %}{{ a.score }} / {{ total_marks }}{% else %}—{% endif %}</td>
+              <td class="text-center">
+                {% if a.percentage or a.percentage == 0 %}
+                  {% if a.percentage >= 50 %}
+                    <span class="badge bg-success-subtle text-success-emphasis">{{ a.percentage | round }}%</span>
+                  {% else %}
+                    <span class="badge bg-danger-subtle text-danger-emphasis">{{ a.percentage | round }}%</span>
+                  {% endif %}
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

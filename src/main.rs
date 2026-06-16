@@ -18,7 +18,9 @@ mod auth;
 
 mod admin;
 mod student;
+mod student_quiz;
 mod lecturer;
+mod lecturer_quiz;
 
 #[derive(Serialize)]
 struct CourseContext {
@@ -507,11 +509,13 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
             .route("/student/assignments", web::get().to(student::student_assignments))
             .route("/student/grades", web::get().to(student::student_grades))
             .route("/student/announcement", web::get().to(student::student_announcement))
-            .route("/student/quizzes",      web::get().to(student::student_quiz))
-            .route("/student/quizzes/{quiz_id}/attempt", web::get().to(student::student_quiz_attempt))
-            .route("/student/quizzes/{quiz_id}/take", web::get().to(student::student_quiz_take))
-            .route("/student/quizzes/{quiz_id}/monitoring-ready", web::post().to(student::mark_quiz_monitoring_ready))
-            .route("/student/quizzes/{quiz_id}/monitoring-events", web::post().to(student::save_quiz_monitoring_event))
+            .route("/student/quizzes", web::get().to(student_quiz::quiz_list))
+            .route("/student/quizzes/{quiz_id}/attempt", web::get().to(student_quiz::attempt_gate))
+            .route("/student/quizzes/{quiz_id}/take", web::get().to(student_quiz::take))
+            .route("/student/quizzes/{quiz_id}/submit", web::post().to(student_quiz::submit))
+            .route("/student/quizzes/{quiz_id}/result", web::get().to(student_quiz::result))
+            .route("/student/quizzes/{quiz_id}/monitoring-ready", web::post().to(student_quiz::mark_monitoring_ready))
+            .route("/student/quizzes/{quiz_id}/monitoring-events", web::post().to(student_quiz::save_monitoring_event))
             .route("/student/attendance",   web::get().to(student::student_attendance))
             .route("/student/forum",        web::get().to(student::student_forum))
             //.route("/student/home", web::get().to(student_home)) //to be removed
@@ -526,6 +530,8 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
             .route("/lecturer/forum", web::get().to(lecturer::lecturer_forum_page))
             .route("/lecturer/profile", web::get().to(lecturer::lecturer_profile_page))
             .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
+            .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
+            .configure(lecturer_quiz::config)
 
             // Admin Routes
             .route("/admin/dashboard", web::get().to(admin::admin_dashboard))

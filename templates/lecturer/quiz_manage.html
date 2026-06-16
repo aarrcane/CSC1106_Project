@@ -1,0 +1,106 @@
+{% extends "base_lecturer.html" %}
+{% block title %}Manage Quizzes – Lecturer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+    <div>
+      <h4 class="fw-bold mb-1">Manage Quizzes</h4>
+      <p class="text-muted mb-0">Create and manage quizzes for your courses.</p>
+    </div>
+    <a href="/lecturer/quizzes/manage/new" class="btn btn-primary">
+      <i class="bi bi-plus-lg me-1"></i> New Quiz
+    </a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Open now</div>
+        <div class="fs-3 fw-bold text-success">{{ open_count }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Upcoming</div>
+        <div class="fs-3 fw-bold text-primary">{{ upcoming_count }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Closed</div>
+        <div class="fs-3 fw-bold text-secondary">{{ closed_count }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-lg-3">
+      <div class="card shadow-sm border-0 h-100"><div class="card-body">
+        <div class="text-muted small">Total</div>
+        <div class="fs-3 fw-bold">{{ quizzes | length }}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card shadow-sm border-0">
+    <div class="card-body p-0">
+      {% if quizzes | length == 0 %}
+        <div class="text-center text-muted py-5">
+          <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+          No quizzes yet. <a href="/lecturer/quizzes/manage/new">Create your first quiz</a>.
+        </div>
+      {% else %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th class="ps-3">Quiz</th>
+              <th>Course</th>
+              <th>Opens</th>
+              <th>Closes</th>
+              <th class="text-center">Qs</th>
+              <th class="text-center">Marks</th>
+              <th class="text-center">Attempts</th>
+              <th>Status</th>
+              <th class="text-end pe-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for q in quizzes %}
+            <tr>
+              <td class="ps-3 fw-semibold">{{ q.title }}</td>
+              <td><span class="badge bg-light text-dark border">{{ q.course_code }}</span></td>
+              <td class="small text-muted">{{ q.open_at }}</td>
+              <td class="small text-muted">{{ q.close_at }}</td>
+              <td class="text-center">{{ q.question_count }}</td>
+              <td class="text-center">{{ q.total_marks }}</td>
+              <td class="text-center">{{ q.attempt_count }}</td>
+              <td>
+                {% if q.status == "open" %}
+                  <span class="badge bg-success-subtle text-success-emphasis">Open</span>
+                {% elif q.status == "upcoming" %}
+                  <span class="badge bg-primary-subtle text-primary-emphasis">Upcoming</span>
+                {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary-emphasis">Closed</span>
+                {% endif %}
+              </td>
+              <td class="text-end pe-3">
+                <div class="btn-group btn-group-sm">
+                  <a class="btn btn-outline-secondary" href="/lecturer/quizzes/manage/{{ q.id }}/results" title="Results"><i class="bi bi-bar-chart-line"></i></a>
+                  <a class="btn btn-outline-secondary" href="/lecturer/quizzes/manage/{{ q.id }}/edit" title="Edit"><i class="bi bi-pencil"></i></a>
+                  <form method="post" action="/lecturer/quizzes/manage/{{ q.id }}/delete"
+                        onsubmit="return confirm('Delete this quiz? This cannot be undone.');" class="d-inline">
+                    <button class="btn btn-outline-danger" title="Delete"><i class="bi bi-trash"></i></button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
