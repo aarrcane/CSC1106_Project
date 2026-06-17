@@ -113,6 +113,14 @@ pub async fn admin_users_page(
         ctx.insert("temp_password", &tmp);
         let _ = session.remove("temp_password");
     }
+    if let Ok(Some(msg)) = session.get::<String>("user_status_success") {
+        ctx.insert("user_status_success", &msg);
+        let _ = session.remove("user_status_success");
+    }
+    if let Ok(Some(msg)) = session.get::<String>("user_status_error") {
+        ctx.insert("user_status_error", &msg);
+        let _ = session.remove("user_status_error");
+    }
 
     let rendered = match tmpl.render("admin/user_management.html", &ctx) {
         Ok(html) => html,
@@ -326,6 +334,73 @@ pub async fn admin_create_user(
         .finish()
 }
 
+pub async fn admin_toggle_user_active(
+    db: web::Data<PgPool>,
+    session: Session,
+    user_id: web::Path<i32>,
+) -> impl Responder {
+    let current_user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let user_id = user_id.into_inner();
+    if user_id == current_user.id {
+        let _ = session.insert(
+            "user_status_error",
+            "You cannot deactivate your own admin account.",
+        );
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
+    }
+
+    let user = sqlx::query_as::<_, AdminUserListItem>(
+        r#"SELECT id, display_name, email, role, is_active
+         , must_change_password
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         FROM users
+         WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .fetch_optional(db.get_ref())
+    .await;
+
+    let user = match user {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let _ = session.insert("user_status_error", "User account not found.");
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
+        }
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load user account: {error}"));
+        }
+    };
+
+    let new_status = !user.is_active;
+    if let Err(error) = sqlx::query("UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2")
+        .bind(new_status)
+        .bind(user.id)
+        .execute(db.get_ref())
+        .await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to update user account status: {error}"));
+    }
+
+    let action = if new_status { "activated" } else { "deactivated" };
+    let message = format!("{} has been {action}.", user.display_name);
+    let _ = session.insert("user_status_success", &message);
+
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+        .finish()
+}
+
 pub async fn admin_courses_page(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
@@ -462,7 +537,17 @@ pub async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl R
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(sql)
+        .fetch_one(db)
+        .await
+}
+
+pub async fn admin_dashboard(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
@@ -481,12 +566,48 @@ pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Re
     ctx.insert("active_page", "dashboard");
     // Mark template as admin so shared partials can adapt
     ctx.insert("is_admin", &true);
-    // Admin dashboard counts (hardcoded for now). Replace with DB queries in future.
-    ctx.insert("students_count", &1240);
-    ctx.insert("lecturers_count", &85);
-    ctx.insert("courses_count", &42);
-    ctx.insert("enrollments_count", &3120);
-    ctx.insert("admins_count", &3);
+    let students_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM students").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let lecturers_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM lecturers").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let admins_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM users WHERE role = 'admin'").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let courses_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM courses").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let enrollments_count =
+        match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM enrollments").await {
+            Ok(count) => count,
+            Err(error) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to load dashboard statistics: {error}"));
+            }
+        };
+
+    ctx.insert("students_count", &students_count);
+    ctx.insert("lecturers_count", &lecturers_count);
+    ctx.insert("admins_count", &admins_count);
+    ctx.insert("courses_count", &courses_count);
+    ctx.insert("enrollments_count", &enrollments_count);
     // Recent activity placeholder list (hardcoded sample events)
     #[derive(Serialize)]
     struct Activity {

@@ -29,6 +29,12 @@
                             {% endif %}
                           </div>
                           {% endif %}
+                          {% if user_status_success is defined and user_status_success != "" %}
+                          <div class="alert alert-success" role="alert">{{ user_status_success }}</div>
+                          {% endif %}
+                          {% if user_status_error is defined and user_status_error != "" %}
+                          <div class="alert alert-danger" role="alert">{{ user_status_error }}</div>
+                          {% endif %}
                           <form method="post" action="{{ form_action }}" id="createUserForm" novalidate>
                             <div class="row g-3 align-items-end">
                               <div class="col-12 col-md-4">
@@ -146,7 +152,13 @@
                                   <td class="small text-muted" data-iso="{{ u.created_at_iso }}">{{ u.created_at }}</td>
                                   <td>
                                     <div class="btn-group" role="group" aria-label="User actions">
-                                      <button type="button" class="btn btn-outline-danger btn-sm">Deactivate</button>
+                                      <form method="post" action="/admin/users/{{ u.id }}/toggle-active" class="d-inline">
+                                        {% if u.is_active %}
+                                        <button type="submit" class="btn btn-outline-danger btn-sm">Deactivate</button>
+                                        {% else %}
+                                        <button type="submit" class="btn btn-outline-success btn-sm">Activate</button>
+                                        {% endif %}
+                                      </form>
                                       <button type="button" class="btn btn-outline-secondary btn-sm">Update</button>
                                       <button type="button" class="btn btn-outline-warning btn-sm">Reset Password</button>
                                     </div>
