@@ -100,8 +100,25 @@ pub async fn admin_users_page(
     .await;
 
     match users {
-        Ok(rows) => ctx.insert("users", &rows),
-        Err(_) => ctx.insert("users", &Vec::<AdminUserListItem>::new()),
+        Ok(rows) => {
+            let total_users = rows.len();
+            let active_users = rows.iter().filter(|user| user.is_active).count();
+            let student_users = rows.iter().filter(|user| user.role == "student").count();
+            let lecturer_users = rows.iter().filter(|user| user.role == "lecturer").count();
+
+            ctx.insert("total_users", &total_users);
+            ctx.insert("active_users", &active_users);
+            ctx.insert("student_users", &student_users);
+            ctx.insert("lecturer_users", &lecturer_users);
+            ctx.insert("users", &rows);
+        }
+        Err(_) => {
+            ctx.insert("total_users", &0usize);
+            ctx.insert("active_users", &0usize);
+            ctx.insert("student_users", &0usize);
+            ctx.insert("lecturer_users", &0usize);
+            ctx.insert("users", &Vec::<AdminUserListItem>::new());
+        }
     }
 
     // Pull any one-time success/temp password from session (set after PRG) and clear them
@@ -205,7 +222,7 @@ pub async fn admin_create_user(
         };
         return HttpResponse::BadRequest().content_type("text/html").body(rendered);
     }
-
+    
     // Always generate a temporary password (admin does not supply it)
     let tmp = crate::generate_temp_password(12);
     let temp_password = Some(tmp.clone());

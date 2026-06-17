@@ -10,7 +10,7 @@ use tera::{Context, Tera};
 
 use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHasher};
-use dotenvy::dotenv;
+// use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
 use std::env;
