@@ -27,9 +27,11 @@
     border-radius: 0.75rem;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
     width: 100%;
-    max-width: 560px;
+    max-width: 680px;
+    display: flex;
+    flex-direction: column;
     max-height: 90dvh;
-    overflow-y: auto;
+    overflow: hidden;
     transform: translateY(12px);
     transition: transform 200ms ease;
   }
@@ -44,6 +46,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex-shrink: 0;
   }
 
   .lms-modal-header h3 {
@@ -54,114 +57,138 @@
 
   .lms-modal-body {
     padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    gap: 1rem;
   }
 
   .lms-modal-footer {
     padding: 1rem 1.5rem;
     border-top: 1px solid var(--color-divider, #e5e7eb);
     display: flex;
-    gap: 0.75rem;
     justify-content: flex-end;
+    flex-shrink: 0;
   }
 
-  .lms-form-group {
+  /* ── Week Card ── */
+  .week-card {
+    border: 1px solid var(--color-border, rgba(0, 0, 0, 0.1));
+    border-radius: 0.625rem;
+    overflow: hidden;
+  }
+
+  .week-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--color-surface, #f9fafb);
+    border-bottom: 1px solid var(--color-divider, #e5e7eb);
+  }
+
+  .week-card-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 600;
+    font-size: 0.875rem;
+  }
+
+  .week-badge {
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+  }
+
+  .week-card-body {
+    padding: 0.75rem 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
 
-  .lms-form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+  /* ── File Row ── */
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: #f8fafc;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    font-size: 0.8125rem;
   }
 
-  .lms-form-label {
-    font-size: 0.875rem;
-    font-weight: 500;
+  .file-row-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .lms-form-input,
-  .lms-form-select,
-  .lms-form-textarea {
+  /* ── Upload Area ── */
+  .upload-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .upload-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    color: #2563eb;
+    cursor: pointer;
+    padding: 0.35rem 0.75rem;
+    border: 1px dashed #93c5fd;
+    border-radius: 0.5rem;
+    background: #eff6ff;
+    transition: background 150ms;
+  }
+
+  .upload-label:hover {
+    background: #dbeafe;
+  }
+
+  .upload-filename {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Add Week Form ── */
+  .add-week-form {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #f0fdf4;
+    border: 1px dashed #86efac;
+    border-radius: 0.625rem;
+  }
+
+  .add-week-form input {
+    flex: 1;
     border: 1px solid var(--color-border, rgba(0, 0, 0, 0.12));
     border-radius: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.4rem 0.75rem;
     font-size: 0.875rem;
-    width: 100%;
     outline: none;
-    transition: border-color 180ms ease, box-shadow 180ms ease;
   }
 
-  .lms-form-input:focus,
-  .lms-form-select:focus,
-  .lms-form-textarea:focus {
-    border-color: var(--lms-primary, #2563eb);
+  .add-week-form input:focus {
+    border-color: #2563eb;
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-  }
-
-  .lms-form-textarea {
-    resize: vertical;
-    min-height: 80px;
-  }
-
-  .lms-form-hint {
-    font-size: 0.75rem;
-    color: var(--color-text-muted, #6b7280);
-  }
-
-  /* ── Delete Modal ── */
-  .lms-delete-modal .lms-modal-body {
-    align-items: center;
-    text-align: center;
-    padding: 2rem 1.5rem;
-  }
-
-  .lms-delete-icon {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    background: #fee2e2;
-    color: #dc2626;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1rem;
-  }
-
-  .lms-delete-modal h4 {
-    font-size: 1rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-  }
-
-  .lms-delete-modal p {
-    font-size: 0.875rem;
-    color: #6b7280;
-    max-width: 34ch;
-    margin: 0;
-  }
-
-  /* ── PDF Upload ── */
-  .lms-pdf-upload-area {
-    border: 2px dashed var(--color-border, rgba(0, 0, 0, 0.12));
-    border-radius: 0.75rem;
-    padding: 2rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 180ms ease, background 180ms ease;
-  }
-
-  .lms-pdf-upload-area:hover,
-  .lms-pdf-upload-area.drag-over {
-    border-color: var(--lms-primary, #2563eb);
-    background: #eff6ff;
   }
 
   /* ── Toast ── */
@@ -204,22 +231,16 @@
 </style>
 {% endblock %}
 
-{% block title %}
-Course - Lecturer
-{% endblock %}
-
+{% block title %}My Courses - Lecturer{% endblock %}
 
 {% block content %}
+
 <!-- Page Header -->
 <div class="page-header">
   <div class="page-header-left">
-    <h4>Course Management</h4>
-    <p>Create, manage and oversee all your assigned courses.</p>
+    <h4>My Courses</h4>
+    <p>View and manage your assigned courses.</p>
   </div>
-  <button type="button" class="btn-lms btn-lms-primary" onclick="openModal('createModal')"
-    aria-label="Create new course">
-    <i data-lucide="plus" width="16" height="16"></i> New Course
-  </button>
 </div>
 
 <!-- Stats Bar -->
@@ -236,35 +257,27 @@ Course - Lecturer
     <div class="course-stat-value">{{ courses | filter(attribute="status", value="Preparing") | length }}</div>
     <div class="course-stat-label">Preparing</div>
   </div>
-  <div class="course-stat-card">
-    <div class="course-stat-value">128</div>
-    <div class="course-stat-label">Total Students</div>
-  </div>
 </div>
 
 <!-- Toolbar -->
 <div class="course-toolbar" role="search">
   <div class="course-search-box">
     <i data-lucide="search" width="15" height="15" style="color:var(--color-text-faint); flex-shrink:0"></i>
-    <input type="search" placeholder="Search courses by name or code" aria-label="Search courses" />
+    <input type="search" id="searchInput" placeholder="Search courses by name or code" aria-label="Search courses"
+      oninput="filterCourses()" />
   </div>
-  <select class="course-filter-select" aria-label="Filter by status">
-    <option>All Status</option>
-    <option>Ongoing</option>
-    <option>Preparing</option>
-    <option>Archived</option>
-  </select>
-  <select class="course-filter-select" aria-label="Filter by trimester">
-    <option>All Trimesters</option>
-    <option>2025/26 Trimester 3</option>
-    <option>2025/26 Trimester 2</option>
+  <select class="course-filter-select" id="statusFilter" aria-label="Filter by status" onchange="filterCourses()">
+    <option value="">All Status</option>
+    <option value="Ongoing">Ongoing</option>
+    <option value="Preparing">Preparing</option>
+    <option value="Archived">Archived</option>
   </select>
   <span style="flex:1"></span>
   <div class="course-view-toggle" role="group" aria-label="View mode">
-    <button type="button" class="active" aria-label="Grid view" id="gridViewBtn" onclick="setView('grid')">
+    <button type="button" class="active" id="gridViewBtn" aria-label="Grid view" onclick="setView('grid')">
       <i data-lucide="layout-grid" width="16" height="16"></i>
     </button>
-    <button type="button" aria-label="List view" id="listViewBtn" onclick="setView('list')">
+    <button type="button" id="listViewBtn" aria-label="List view" onclick="setView('list')">
       <i data-lucide="list" width="16" height="16"></i>
     </button>
   </div>
@@ -273,15 +286,14 @@ Course - Lecturer
 <!-- Course Grid -->
 <div class="course-mgmt-grid" id="courseGrid" role="list">
   {% for course in courses %}
-  <article class="course-mgmt-card" role="listitem">
+  <article class="course-mgmt-card course-card-item" data-name="{{ course.name | lower }}"
+    data-code="{{ course.code | lower }}" data-status="{{ course.status }}" role="listitem">
     <div class="course-mgmt-card-header">
       <div class="course-accent-bar" style="background:#2563eb"></div>
       <div style="flex:1; min-width:0">
         <div class="course-code">{{ course.code }}</div>
-        <div
-          style="font-size:var(--text-base); font-weight:600; color:var(--color-text); margin-top:var(--space-1); line-height:1.3">
-          {{ course.name }}
-        </div>
+        <div style="font-size:var(--text-base); font-weight:600; color:var(--color-text);
+                    margin-top:var(--space-1); line-height:1.3">{{ course.name }}</div>
       </div>
       <span class="status-badge {% if course.status == 'Ongoing' %}status-ongoing{% else %}status-preparing{% endif %}">
         {% if course.status == 'Ongoing' %}
@@ -294,183 +306,66 @@ Course - Lecturer
     </div>
     <div class="course-mgmt-card-body">
       <div class="course-meta-row">
-        <span class="course-meta-item"><i data-lucide="book" width="12" height="12"></i> {{ course.description |
-          truncate(length=40) }}</span>
+        <span class="course-meta-item">
+          <i data-lucide="book" width="12" height="12"></i>
+          {{ course.description | truncate(length=60) }}
+        </span>
       </div>
+      {% if course.trimester %}
+      <div class="course-meta-row" style="margin-top:var(--space-1)">
+        <span class="course-meta-item">
+          <i data-lucide="calendar" width="12" height="12"></i>
+          {{ course.trimester }}
+        </span>
+      </div>
+      {% endif %}
     </div>
     <div class="course-mgmt-card-footer">
-      <button type="button" class="btn-lms btn-lms-ghost btn-lms-sm btn-lms-icon" aria-label="View course"
-        onclick="showToast('Opening {{ course.code }}…')">
-        <i data-lucide="eye" width="15" height="15"></i>
-      </button>
-      <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm"
-        onclick="openEditModal({{ course.id }}, '{{ course.code }}', '{{ course.name }}', '{{ course.description }}', '{{ course.status }}')">
-        <i data-lucide="pencil" width="13" height="13"></i> Edit
-      </button>
-      <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
-        onclick="openDeleteModal({{ course.id }}, '{{ course.code }} – {{ course.name }}')">
-        <i data-lucide="trash-2" width="13" height="13"></i> Delete
+      <button type="button" class="btn-lms btn-lms-primary btn-lms-sm"
+        onclick="openCourseModal({{ course.id }}, '{{ course.code }}', '{{ course.name }}')">
+        <i data-lucide="folder-open" width="13" height="13"></i> Manage Content
       </button>
     </div>
   </article>
   {% else %}
-  <p style="color:var(--color-text-muted); grid-column:1/-1">No courses yet. Click <strong>New Course</strong> to create
-    one.</p>
+  <p style="color:var(--color-text-muted); grid-column:1/-1">
+    No courses assigned to you yet. Contact your administrator.
+  </p>
   {% endfor %}
 </div>
 
-<!-- CREATE COURSE MODAL -->
-<div class="lms-modal-overlay" id="createModal" role="dialog" aria-modal="true" aria-labelledby="createModalTitle"
-  onclick="handleOverlayClick(event,'createModal')">
+<!-- COURSE CONTENT MODAL -->
+<div class="lms-modal-overlay" id="courseModal" role="dialog" aria-modal="true" aria-labelledby="courseModalTitle"
+  onclick="handleOverlayClick(event,'courseModal')">
   <div class="lms-modal">
     <div class="lms-modal-header">
-      <h3 id="createModalTitle">Create New Course</h3>
-      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('createModal')"
+      <div>
+        <div id="courseModalCode" style="font-size:0.75rem; color:var(--color-text-muted); font-weight:500"></div>
+        <h3 id="courseModalTitle" style="margin-top:2px">Course Content</h3>
+      </div>
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('courseModal')"
         aria-label="Close">
         <i data-lucide="x" width="18" height="18"></i>
       </button>
     </div>
-    <div class="lms-modal-body">
 
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="courseCode">Course Code *</label>
-        <input class="lms-form-input" id="courseCode" type="text" placeholder="e.g. CSC2101" />
+    <div class="lms-modal-body" id="courseModalBody">
+      <!-- Dynamically rendered by JS -->
+      <div style="text-align:center; padding:2rem; color:var(--color-text-muted)">
+        <i data-lucide="loader" width="24" height="24"></i>
+        <p style="margin-top:0.5rem">Loading...</p>
       </div>
-
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="courseName">Course Name *</label>
-        <input class="lms-form-input" id="courseName" type="text" placeholder="e.g. Web Development II" />
-      </div>
-
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="courseDesc">Description</label>
-        <textarea class="lms-form-textarea" id="courseDesc"></textarea>
-      </div>
-
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="courseFile">Course Material (PDF)</label>
-        <div class="lms-pdf-upload-area" id="pdfUploadArea" onclick="document.getElementById('courseFile').click()">
-          <i data-lucide="upload-cloud" width="28" height="28" style="color:var(--color-text-faint)"></i>
-          <p style="margin:var(--space-2) 0 0; font-size:var(--text-sm); color:var(--color-text-muted)">
-            Click to upload or drag &amp; drop
-          </p>
-          <p style="font-size:var(--text-xs); color:var(--color-text-faint); margin:var(--space-1) 0 0">
-            PDF only · Max 20MB
-          </p>
-          <input type="file" id="courseFile" accept=".pdf" style="display:none" onchange="handleFileSelect(event)" />
-        </div>
-        <div id="pdfPreview"
-          style="display:none; align-items:center; gap:var(--space-3); padding:var(--space-3); background:var(--color-info-bg); border-radius:var(--radius-md); border:1px solid rgba(29,78,216,0.15)">
-          <i data-lucide="file-text" width="20" height="20" style="color:var(--color-info); flex-shrink:0"></i>
-          <span id="pdfFileName"
-            style="font-size:var(--text-sm); color:var(--color-text); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></span>
-          <span id="pdfFileSize" style="font-size:var(--text-xs); color:var(--color-text-muted); flex-shrink:0"></span>
-          <button type="button" onclick="clearFile()"
-            style="padding:2px; color:var(--color-text-muted); background:none; border:none; cursor:pointer; flex-shrink:0"
-            aria-label="Remove file">
-            <i data-lucide="x" width="14" height="14"></i>
-          </button>
-        </div>
-      </div>
-
     </div>
+
     <div class="lms-modal-footer">
-      <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('createModal')">Cancel</button>
-      <button type="button" class="btn-lms btn-lms-primary" onclick="handleCreate()">
-        <i data-lucide="plus" width="15" height="15"></i> Create Course
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- EDIT COURSE MODAL -->
-<div class="lms-modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle"
-  onclick="handleOverlayClick(event,'editModal')">
-  <div class="lms-modal">
-    <div class="lms-modal-header">
-      <h3 id="editModalTitle">Edit Course</h3>
-      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('editModal')"
-        aria-label="Close">
-        <i data-lucide="x" width="18" height="18"></i>
-      </button>
-    </div>
-    <div class="lms-modal-body">
-      <div class="lms-form-row">
-        <div class="lms-form-group">
-          <label class="lms-form-label" for="editCode">Course Code</label>
-          <input class="lms-form-input" id="editCode" type="text" value="CSC2101" />
-        </div>
-        <div class="lms-form-group">
-          <label class="lms-form-label" for="editStatus">Status</label>
-          <select class="lms-form-select" id="editStatus">
-            <option value="Ongoing">Ongoing</option>
-            <option value="Preparing">Preparing</option>
-            <option value="Archived">Archived</option>
-          </select>
-        </div>
-      </div>
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="editName">Course Name</label>
-        <input class="lms-form-input" id="editName" type="text" value="Web Development II" />
-      </div>
-      <div class="lms-form-group">
-        <label class="lms-form-label" for="editDesc">Description</label>
-        <textarea class="lms-form-textarea"
-          id="editDesc">Advanced web development topics including frameworks, APIs, and deployment.</textarea>
-      </div>
-      <div class="lms-form-row">
-        <div class="lms-form-group">
-          <label class="lms-form-label" for="editTrimester">Trimester</label>
-          <select class="lms-form-select" id="editTrimester">
-            <option selected>2025/26 Trimester 3</option>
-            <option>2025/26 Trimester 2</option>
-          </select>
-        </div>
-        <div class="lms-form-group">
-          <label class="lms-form-label" for="editCapacity">Max Students</label>
-          <input class="lms-form-input" id="editCapacity" type="number" value="50" />
-        </div>
-      </div>
-    </div>
-    <div class="lms-modal-footer">
-      <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('editModal')">Cancel</button>
-      <button type="button" class="btn-lms btn-lms-primary" onclick="handleSave()">
-        <i data-lucide="save" width="15" height="15"></i> Save Changes
-      </button>
-    </div>
-  </div>
-</div>
-
-<!-- DELETE CONFIRM MODAL -->
-<div class="lms-modal-overlay" id="deleteModal" role="dialog" aria-modal="true" aria-labelledby="deleteModalTitle"
-  onclick="handleOverlayClick(event,'deleteModal')">
-  <div class="lms-modal lms-delete-modal">
-    <div class="lms-modal-header" style="border-bottom:none; padding-bottom:0">
-      <span></span>
-      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('deleteModal')"
-        aria-label="Close">
-        <i data-lucide="x" width="18" height="18"></i>
-      </button>
-    </div>
-    <div class="lms-modal-body">
-      <div class="lms-delete-icon"><i data-lucide="trash-2" width="24" height="24"></i></div>
-      <h4 id="deleteModalTitle">Delete Course</h4>
-      <p id="deleteModalBody">Are you sure you want to delete <strong></strong>? This action cannot be undone and will
-        remove all associated assignments, quizzes, and grades.</p>
-    </div>
-    <div class="lms-modal-footer" style="justify-content:center; gap:var(--space-4)">
-      <button type="button" class="btn-lms btn-lms-secondary" style="min-width:120px"
-        onclick="closeModal('deleteModal')">Cancel</button>
-      <button type="button" class="btn-lms btn-lms-primary" style="min-width:120px; background:var(--color-error)"
-        onclick="handleDelete()">
-        <i data-lucide="trash-2" width="15" height="15"></i> Delete
-      </button>
+      <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('courseModal')">Close</button>
     </div>
   </div>
 </div>
 
 <!-- Toast Container -->
 <div class="lms-toast-container" aria-live="polite" id="toastContainer"></div>
+
 {% endblock %}
 
 {% block extra_js %}
@@ -478,6 +373,9 @@ Course - Lecturer
 <script>
   lucide.createIcons();
 
+  let activeCourseId = null;
+
+  // ── Modal helpers ──────────────────────────────────────────────────────────
   function openModal(id) {
     document.getElementById(id).classList.add('open');
     document.body.style.overflow = 'hidden';
@@ -490,148 +388,204 @@ Course - Lecturer
     if (e.target === document.getElementById(id)) closeModal(id);
   }
 
-  // ── Edit ──
-  let editingCourseId = null;
+  // ── Open course modal & fetch data ────────────────────────────────────────
+  async function openCourseModal(courseId, code, name) {
+    activeCourseId = courseId;
+    document.getElementById('courseModalCode').textContent = code;
+    document.getElementById('courseModalTitle').textContent = name;
+    document.getElementById('courseModalBody').innerHTML = `
+      <div style="text-align:center; padding:2rem; color:var(--color-text-muted)">
+        <p>Loading...</p>
+      </div>`;
+    openModal('courseModal');
 
-  function openEditModal(id, code, name, desc, status) {
-    editingCourseId = id;
-    document.getElementById('editCode').value = code;
-    document.getElementById('editName').value = name;
-    document.getElementById('editDesc').value = desc;
-    document.getElementById('editStatus').value = status;
-    openModal('editModal');
+    try {
+      const res = await fetch('/lecturer/course/' + courseId + '/data');
+      if (!res.ok) { showToast('Failed to load course data.', 'error'); return; }
+      const data = await res.json();
+      renderCourseModal(courseId, data.weeks);
+    } catch (e) {
+      showToast('Network error.', 'error');
+    }
   }
 
-  async function handleSave() {
-    const payload = {
-      course_code: document.getElementById('editCode').value.trim(),
-      course_name: document.getElementById('editName').value.trim(),
-      description: document.getElementById('editDesc').value.trim(),
-      status: document.getElementById('editStatus').value,
-      trimester: document.getElementById('editTrimester').value,
-      max_students: parseInt(document.getElementById('editCapacity').value) || null,
-    };
+  // ── Render weeks + files inside modal ─────────────────────────────────────
+  function renderCourseModal(courseId, weeks) {
+    const body = document.getElementById('courseModalBody');
+    let html = '';
+
+    if (weeks.length === 0) {
+      html += `<p style="color:var(--color-text-muted); font-size:0.875rem">
+        No weeks yet. Add one below.
+      </p>`;
+    }
+
+    weeks.forEach(week => {
+      const filesHtml = week.files.length > 0
+        ? week.files.map(f => `
+            <div class="file-row" id="file-row-${f.id}">
+              <i data-lucide="file-text" width="14" height="14" style="color:#2563eb;flex-shrink:0"></i>
+              <span class="file-row-name">${escHtml(f.title)}</span>
+              <button type="button" class="btn-lms btn-lms-danger btn-lms-sm btn-lms-icon"
+                onclick="deleteFile(${f.id})" aria-label="Delete file">
+                <i data-lucide="trash-2" width="13" height="13"></i>
+              </button>
+            </div>`).join('')
+        : `<p style="font-size:0.8rem; color:var(--color-text-faint); margin:0">No files yet.</p>`;
+
+      html += `
+        <div class="week-card" id="week-card-${week.id}">
+          <div class="week-card-header">
+            <div class="week-card-header-left">
+              <span class="week-badge">Week ${week.week_number}</span>
+              ${escHtml(week.title)}
+            </div>
+            <button type="button" class="btn-lms btn-lms-danger btn-lms-sm btn-lms-icon"
+              onclick="deleteWeek(${courseId}, ${week.id})" aria-label="Delete week">
+              <i data-lucide="trash-2" width="13" height="13"></i>
+            </button>
+          </div>
+          <div class="week-card-body" id="week-body-${week.id}">
+            ${filesHtml}
+            <div class="upload-row">
+              <label class="upload-label" for="upload-${week.id}">
+                <i data-lucide="upload" width="13" height="13"></i> Upload PDF
+                <input type="file" id="upload-${week.id}" accept=".pdf" style="display:none"
+                  onchange="uploadFile(event, ${courseId}, ${week.id})" />
+              </label>
+              <span class="upload-filename" id="upload-name-${week.id}">No file chosen</span>
+            </div>
+          </div>
+        </div>`;
+    });
+
+    // Add Week form
+    const nextWeek = weeks.length + 1;
+    html += `
+      <div class="add-week-form" id="addWeekForm">
+        <i data-lucide="plus-circle" width="16" height="16" style="color:#16a34a;flex-shrink:0"></i>
+        <input type="number" id="newWeekNumber" value="${nextWeek}" min="1"
+          placeholder="Week #" style="max-width:90px" />
+        <input type="text" id="newWeekTitle" placeholder="Week title, e.g. Introduction to Rust" />
+        <button type="button" class="btn-lms btn-lms-primary btn-lms-sm"
+          onclick="addWeek(${courseId})">
+          <i data-lucide="plus" width="13" height="13"></i> Add Week
+        </button>
+      </div>`;
+
+    body.innerHTML = html;
+    lucide.createIcons({ nodes: [body] });
+  }
+
+  // ── Add Week ───────────────────────────────────────────────────────────────
+  async function addWeek(courseId) {
+    const weekNumber = parseInt(document.getElementById('newWeekNumber').value);
+    const title = document.getElementById('newWeekTitle').value.trim();
+    if (!title) { showToast('Please enter a week title.', 'error'); return; }
+
     try {
-      const res = await fetch('/lecturer/courses/' + editingCourseId + '/edit', {
+      const res = await fetch('/lecturer/course/' + courseId + '/week/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ week_number: weekNumber, title })
       });
       if (res.ok) {
-        closeModal('editModal');
-        showToast('Course changes saved.', 'success');
-        setTimeout(() => location.reload(), 1200);
+        showToast('Week added.', 'success');
+        await reloadModal(courseId);
       } else {
         showToast('Error: ' + await res.text(), 'error');
       }
     } catch (e) {
-      showToast('Network error. Please try again.', 'error');
+      showToast('Network error.', 'error');
     }
   }
 
-  // ── Delete ──
-  let pendingDeleteId = null;
-  let pendingDelete = '';
-
-  function openDeleteModal(id, courseName) {
-    pendingDeleteId = id;
-    pendingDelete = courseName;
-    document.querySelector('#deleteModalBody strong').textContent = '"' + courseName + '"';
-    openModal('deleteModal');
-  }
-
-  async function handleDelete() {
-    try {
-      const res = await fetch('/lecturer/courses/' + pendingDeleteId + '/delete', {
-        method: 'POST'
-      });
-      if (res.ok) {
-        closeModal('deleteModal');
-        showToast('"' + pendingDelete + '" has been deleted.', 'success');
-        setTimeout(() => location.reload(), 1200);
-      } else {
-        showToast('Error: ' + await res.text(), 'error');
-      }
-    } catch (e) {
-      showToast('Network error. Please try again.', 'error');
-    }
-  }
-
-  // ── Create ──
-  function handleFileSelect(event) {
+  // ── Upload File ───────────────────────────────────────────────────────────
+  async function uploadFile(event, courseId, weekId) {
     const file = event.target.files[0];
     if (!file) return;
-    showFilePreview(file);
-  }
+    document.getElementById('upload-name-' + weekId).textContent = file.name;
 
-  function showFilePreview(file) {
-    if (file.size > 20 * 1024 * 1024) {
-      showToast('File exceeds 20MB limit.', 'error');
-      clearFile();
-      return;
-    }
-    const sizeMB = (file.size / 1024 / 1024).toFixed(2);
-    document.getElementById('pdfUploadArea').style.display = 'none';
-    const preview = document.getElementById('pdfPreview');
-    preview.style.display = 'flex';
-    document.getElementById('pdfFileName').textContent = file.name;
-    document.getElementById('pdfFileSize').textContent = sizeMB + ' MB';
-    lucide.createIcons({ nodes: [preview] });
-  }
-
-  function clearFile() {
-    document.getElementById('courseFile').value = '';
-    document.getElementById('pdfUploadArea').style.display = 'flex';
-    document.getElementById('pdfPreview').style.display = 'none';
-  }
-
-  document.addEventListener('DOMContentLoaded', () => {
-    const area = document.getElementById('pdfUploadArea');
-    if (!area) return;
-    area.addEventListener('dragover', (e) => { e.preventDefault(); area.classList.add('drag-over'); });
-    area.addEventListener('dragleave', () => area.classList.remove('drag-over'));
-    area.addEventListener('drop', (e) => {
-      e.preventDefault();
-      area.classList.remove('drag-over');
-      const file = e.dataTransfer.files[0];
-      if (file && file.type === 'application/pdf') {
-        document.getElementById('courseFile').files = e.dataTransfer.files;
-        showFilePreview(file);
-      } else {
-        showToast('Please upload a PDF file only.', 'error');
-      }
-    });
-  });
-
-  async function handleCreate() {
-    const name = document.getElementById('courseName').value.trim();
-    const code = document.getElementById('courseCode').value.trim();
-    const desc = document.getElementById('courseDesc').value.trim();
-    if (!name || !code) { showToast('Please fill in required fields.', 'error'); return; }
     const formData = new FormData();
-    formData.append('course_code', code);
-    formData.append('course_name', name);
-    formData.append('description', desc);
-    const fileInput = document.getElementById('courseFile');
-    if (fileInput.files[0]) formData.append('material', fileInput.files[0]);
+    formData.append('file', file);
+
     try {
-      const res = await fetch('/lecturer/courses/create', { method: 'POST', body: formData });
+      const res = await fetch('/lecturer/course/' + courseId + '/week/' + weekId + '/upload', {
+        method: 'POST',
+        body: formData
+      });
       if (res.ok) {
-        closeModal('createModal');
-        showToast('Course "' + code + ' – ' + name + '" created.', 'success');
-        document.getElementById('courseName').value = '';
-        document.getElementById('courseCode').value = '';
-        document.getElementById('courseDesc').value = '';
-        clearFile();
-        setTimeout(() => location.reload(), 1200);
+        showToast('"' + file.name + '" uploaded.', 'success');
+        await reloadModal(courseId);
+      } else {
+        showToast('Upload error: ' + await res.text(), 'error');
+      }
+    } catch (e) {
+      showToast('Network error.', 'error');
+    }
+  }
+
+  // ── Delete File ───────────────────────────────────────────────────────────
+  async function deleteFile(materialId) {
+    try {
+      const res = await fetch('/lecturer/material/' + materialId + '/delete', { method: 'DELETE' });
+      if (res.ok) {
+        showToast('File deleted.', 'success');
+        await reloadModal(activeCourseId);
       } else {
         showToast('Error: ' + await res.text(), 'error');
       }
     } catch (e) {
-      showToast('Network error. Please try again.', 'error');
+      showToast('Network error.', 'error');
     }
   }
 
+  // ── Delete Week ───────────────────────────────────────────────────────────
+  async function deleteWeek(courseId, weekId) {
+    try {
+      const res = await fetch('/lecturer/course/' + courseId + '/week/' + weekId + '/delete', {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        showToast('Week deleted.', 'success');
+        await reloadModal(courseId);
+      } else {
+        showToast('Error: ' + await res.text(), 'error');
+      }
+    } catch (e) {
+      showToast('Network error.', 'error');
+    }
+  }
+
+  // ── Reload modal content without closing ──────────────────────────────────
+  async function reloadModal(courseId) {
+    try {
+      const res = await fetch('/lecturer/course/' + courseId + '/data');
+      if (res.ok) {
+        const data = await res.json();
+        renderCourseModal(courseId, data.weeks);
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  // ── Filter & View ─────────────────────────────────────────────────────────
+  function filterCourses() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value;
+    document.querySelectorAll('.course-card-item').forEach(card => {
+      const matchSearch = card.dataset.name.includes(search) || card.dataset.code.includes(search);
+      const matchStatus = !status || card.dataset.status === status;
+      card.style.display = matchSearch && matchStatus ? '' : 'none';
+    });
+  }
+
+  function setView(mode) {
+    document.getElementById('gridViewBtn').classList.toggle('active', mode === 'grid');
+    document.getElementById('listViewBtn').classList.toggle('active', mode === 'list');
+    document.getElementById('courseGrid').style.gridTemplateColumns = mode === 'list' ? '1fr' : '';
+  }
+
+  // ── Toast ─────────────────────────────────────────────────────────────────
   function showToast(msg, type = '') {
     const container = document.getElementById('toastContainer');
     const t = document.createElement('div');
@@ -643,10 +597,9 @@ Course - Lecturer
     setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3000);
   }
 
-  function setView(mode) {
-    document.getElementById('gridViewBtn').classList.toggle('active', mode === 'grid');
-    document.getElementById('listViewBtn').classList.toggle('active', mode === 'list');
-    document.getElementById('courseGrid').style.gridTemplateColumns = mode === 'list' ? '1fr' : '';
+  // ── Escape HTML ───────────────────────────────────────────────────────────
+  function escHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 </script>
 {% endblock %}

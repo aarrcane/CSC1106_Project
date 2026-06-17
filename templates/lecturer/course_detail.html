@@ -1,0 +1,24 @@
+{% extends "base_lecturer.html" %}
+
+{% block title %}Course Detail{% endblock %}
+
+{% block content %}
+<h2>{{ course.code }} – {{ course.name }}</h2>
+<p>{{ course.description }}</p>
+
+<h3>Weeks</h3>
+<ul>
+  {% for w in weeks %}
+    <li>
+      Week {{ w.week_number }} – {{ w.title }}
+      <ul>
+        {% for f in w.files %}
+          <li>{{ f.title }}</li>
+        {% endfor %}
+      </ul>
+    </li>
+  {% else %}
+    <li>No weeks created yet.</li>
+  {% endfor %}
+</ul>
+{% endblock %}

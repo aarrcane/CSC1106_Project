@@ -4,6 +4,7 @@ use tera::{Context, Tera};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::PgPool;
+use serde_json::json;
 
 use crate::auth::UserRole;
 
@@ -99,8 +100,25 @@ pub async fn admin_users_page(
     .await;
 
     match users {
-        Ok(rows) => ctx.insert("users", &rows),
-        Err(_) => ctx.insert("users", &Vec::<AdminUserListItem>::new()),
+        Ok(rows) => {
+            let total_users = rows.len();
+            let active_users = rows.iter().filter(|user| user.is_active).count();
+            let student_users = rows.iter().filter(|user| user.role == "student").count();
+            let lecturer_users = rows.iter().filter(|user| user.role == "lecturer").count();
+
+            ctx.insert("total_users", &total_users);
+            ctx.insert("active_users", &active_users);
+            ctx.insert("student_users", &student_users);
+            ctx.insert("lecturer_users", &lecturer_users);
+            ctx.insert("users", &rows);
+        }
+        Err(_) => {
+            ctx.insert("total_users", &0usize);
+            ctx.insert("active_users", &0usize);
+            ctx.insert("student_users", &0usize);
+            ctx.insert("lecturer_users", &0usize);
+            ctx.insert("users", &Vec::<AdminUserListItem>::new());
+        }
     }
 
     // Pull any one-time success/temp password from session (set after PRG) and clear them
@@ -111,6 +129,14 @@ pub async fn admin_users_page(
     if let Ok(Some(tmp)) = session.get::<String>("temp_password") {
         ctx.insert("temp_password", &tmp);
         let _ = session.remove("temp_password");
+    }
+    if let Ok(Some(msg)) = session.get::<String>("user_status_success") {
+        ctx.insert("user_status_success", &msg);
+        let _ = session.remove("user_status_success");
+    }
+    if let Ok(Some(msg)) = session.get::<String>("user_status_error") {
+        ctx.insert("user_status_error", &msg);
+        let _ = session.remove("user_status_error");
     }
 
     let rendered = match tmpl.render("admin/user_management.html", &ctx) {
@@ -196,7 +222,7 @@ pub async fn admin_create_user(
         };
         return HttpResponse::BadRequest().content_type("text/html").body(rendered);
     }
-
+    
     // Always generate a temporary password (admin does not supply it)
     let tmp = crate::generate_temp_password(12);
     let temp_password = Some(tmp.clone());
@@ -325,11 +351,128 @@ pub async fn admin_create_user(
         .finish()
 }
 
-pub async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn admin_toggle_user_active(
+    db: web::Data<PgPool>,
+    session: Session,
+    user_id: web::Path<i32>,
+) -> impl Responder {
+    let current_user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let user_id = user_id.into_inner();
+    if user_id == current_user.id {
+        let _ = session.insert(
+            "user_status_error",
+            "You cannot deactivate your own admin account.",
+        );
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
+    }
+
+    let user = sqlx::query_as::<_, AdminUserListItem>(
+        r#"SELECT id, display_name, email, role, is_active
+         , must_change_password
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
+         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         FROM users
+         WHERE id = $1"#,
+    )
+    .bind(user_id)
+    .fetch_optional(db.get_ref())
+    .await;
+
+    let user = match user {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let _ = session.insert("user_status_error", "User account not found.");
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
+        }
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load user account: {error}"));
+        }
+    };
+
+    let new_status = !user.is_active;
+    if let Err(error) = sqlx::query("UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2")
+        .bind(new_status)
+        .bind(user.id)
+        .execute(db.get_ref())
+        .await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to update user account status: {error}"));
+    }
+
+    let action = if new_status { "activated" } else { "deactivated" };
+    let message = format!("{} has been {action}.", user.display_name);
+    let _ = session.insert("user_status_success", &message);
+
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+        .finish()
+}
+
+pub async fn admin_courses_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
+
+    #[derive(Serialize)]
+    struct CourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        status: String,
+        trimester: String,
+        lecturer_name: String,  // "Unassigned" if NULL
+    }
+
+    let courses = sqlx::query_as!(
+        CourseRow,
+        r#"SELECT
+            c.id,
+            c.course_code   AS code,
+            c.course_name   AS name,
+            COALESCE(c.status, 'Preparing')     AS "status!",
+            COALESCE(c.trimester, '')            AS "trimester!",
+            COALESCE(u.display_name, 'Unassigned') AS "lecturer_name!"
+           FROM courses c
+           LEFT JOIN lecturers l ON l.id = c.lecturer_id
+           LEFT JOIN users u     ON u.id = l.user_id
+           ORDER BY c.created_at DESC"#
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    // Fetch all lecturers for the assign dropdown
+    #[derive(Serialize)]
+    struct LecturerOption {
+        id: i32,
+        name: String,
+    }
+
+    let lecturers = sqlx::query_as!(
+        LecturerOption,
+        r#"SELECT l.id, u.display_name AS name
+           FROM lecturers l
+           JOIN users u ON u.id = l.user_id
+           ORDER BY u.display_name"#
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
 
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
@@ -338,6 +481,8 @@ pub async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl
     ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
     ctx.insert("active_page", "courses");
     ctx.insert("is_admin", &true);
+    ctx.insert("courses", &courses);
+    ctx.insert("lecturers", &lecturers);  // for the assign dropdown
 
     let rendered = match tmpl.render("admin/course_administration.html", &ctx) {
         Ok(html) => html,
@@ -409,7 +554,17 @@ pub async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl R
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(sql)
+        .fetch_one(db)
+        .await
+}
+
+pub async fn admin_dashboard(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
@@ -428,12 +583,48 @@ pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Re
     ctx.insert("active_page", "dashboard");
     // Mark template as admin so shared partials can adapt
     ctx.insert("is_admin", &true);
-    // Admin dashboard counts (hardcoded for now). Replace with DB queries in future.
-    ctx.insert("students_count", &1240);
-    ctx.insert("lecturers_count", &85);
-    ctx.insert("courses_count", &42);
-    ctx.insert("enrollments_count", &3120);
-    ctx.insert("admins_count", &3);
+    let students_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM students").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let lecturers_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM lecturers").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let admins_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM users WHERE role = 'admin'").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let courses_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM courses").await {
+        Ok(count) => count,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load dashboard statistics: {error}"));
+        }
+    };
+    let enrollments_count =
+        match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM enrollments").await {
+            Ok(count) => count,
+            Err(error) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to load dashboard statistics: {error}"));
+            }
+        };
+
+    ctx.insert("students_count", &students_count);
+    ctx.insert("lecturers_count", &lecturers_count);
+    ctx.insert("admins_count", &admins_count);
+    ctx.insert("courses_count", &courses_count);
+    ctx.insert("enrollments_count", &enrollments_count);
     // Recent activity placeholder list (hardcoded sample events)
     #[derive(Serialize)]
     struct Activity {
@@ -488,4 +679,215 @@ pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Re
     };
 
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateCourseForm {
+    pub course_code: String,
+    pub course_name: String,
+    pub description: Option<String>,
+    pub trimester: Option<String>,
+    pub max_students: Option<i32>,
+    pub lecturer_id: Option<i32>,
+}
+
+pub async fn create_course(
+    form: web::Json<CreateCourseForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let result = sqlx::query!(
+    "INSERT INTO courses (course_code, course_name, description, trimester, max_students, lecturer_id)
+     VALUES ($1, $2, $3, $4, $5, $6)",
+    form.course_code,
+    form.course_name,
+    form.description.as_deref().unwrap_or(""),
+    form.trimester.as_deref().unwrap_or(""),
+    form.max_students,
+    form.lecturer_id,
+)
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course created" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct AssignLecturerForm {
+    pub lecturer_id: i32,
+}
+
+pub async fn assign_lecturer(
+    cid: web::Path<i32>,
+    form: web::Json<AssignLecturerForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let result = sqlx::query!(
+        "UPDATE courses SET lecturer_id = $1 WHERE id = $2",
+        form.lecturer_id,
+        cid.into_inner()
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Lecturer assigned" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+pub async fn delete_course(
+    cid: web::Path<i32>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let course_id = cid.into_inner();
+
+    // Delete uploaded files
+    let _ = std::fs::remove_dir_all(format!("uploads/courses/{}", course_id));
+
+    let result = sqlx::query!(
+        "DELETE FROM courses WHERE id = $1",
+        course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course deleted" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── GET enrolled students for a course ──────────────────────────────────────
+pub async fn get_course_enrollments(
+    cid: web::Path<i32>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let enrolled = sqlx::query!(
+        r#"SELECT s.id AS student_id, u.display_name, u.email
+           FROM enrollments e
+           JOIN students s ON s.id = e.student_id
+           JOIN users u ON u.id = s.user_id
+           WHERE e.course_id = $1
+           ORDER BY u.display_name ASC"#,
+        course_id
+    )
+    .fetch_all(db.get_ref())
+    .await;
+
+    let all_students = sqlx::query!(
+        r#"SELECT s.id AS student_id, u.display_name, u.email
+           FROM students s
+           JOIN users u ON u.id = s.user_id
+           ORDER BY u.display_name ASC"#
+    )
+    .fetch_all(db.get_ref())
+    .await;
+
+    match (enrolled, all_students) {
+        (Ok(enrolled), Ok(all)) => {
+            let enrolled_ids: Vec<i32> = enrolled.iter().map(|r| r.student_id).collect();
+            let all_list: Vec<serde_json::Value> = all.iter().map(|r| {
+                json!({
+                    "student_id": r.student_id,
+                    "display_name": r.display_name,
+                    "email": r.email,
+                    "enrolled": enrolled_ids.contains(&r.student_id)
+                })
+            }).collect();
+            HttpResponse::Ok().json(json!({ "students": all_list }))
+        }
+        _ => HttpResponse::InternalServerError().body("Failed to load enrollment data"),
+    }
+}
+
+// ─── ENROLL a student into a course ──────────────────────────────────────────
+#[derive(serde::Deserialize)]
+pub struct EnrollForm {
+    pub student_id: i32,
+}
+
+pub async fn enroll_student(
+    cid: web::Path<i32>,
+    form: web::Json<EnrollForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let result = sqlx::query!(
+        "INSERT INTO enrollments (student_id, course_id)
+         VALUES ($1, $2)
+         ON CONFLICT (student_id, course_id) DO NOTHING",
+        form.student_id, course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student enrolled" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── UNENROLL a student from a course ────────────────────────────────────────
+#[derive(serde::Deserialize)]
+pub struct UnenrollForm {
+    pub student_id: i32,
+}
+
+pub async fn unenroll_student(
+    cid: web::Path<i32>,
+    form: web::Json<UnenrollForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let result = sqlx::query!(
+        "DELETE FROM enrollments WHERE student_id = $1 AND course_id = $2",
+        form.student_id, course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student unenrolled" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }
