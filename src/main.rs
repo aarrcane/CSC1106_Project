@@ -1,24 +1,28 @@
 use actix_files::Files;
 use actix_session::{Session, SessionMiddleware, storage::CookieSessionStore};
 use actix_web::{
+    App, HttpResponse, HttpServer, Responder,
     cookie::Key,
     middleware::{NormalizePath, TrailingSlash},
-    web, App, HttpResponse, HttpServer, Responder,
+    web,
 };
 use tera::{Context, Tera};
 
-use dotenvy::dotenv;
-use argon2::{Argon2, PasswordHasher};
 use argon2::password_hash::{SaltString, rand_core::OsRng};
+use argon2::{Argon2, PasswordHasher};
+use dotenvy::dotenv;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
 use std::env;
 
-mod auth;
-
 mod admin;
-mod student;
+mod auth;
 mod lecturer;
+mod storage;
+mod student;
+use storage::SupabaseStorage;
+
+// ─── Shared Context Types ─────────────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct CourseContext {
@@ -29,9 +33,9 @@ struct CourseContext {
     image_url: String,
     pinned: bool,
     ongoing: bool,
-    progress: i32,     //0-100%
+    progress: i32,
     lecturer: String,
-    attendance_pct: i32,   //0-100%
+    attendance_pct: i32,
 }
 
 #[derive(Serialize)]
@@ -57,7 +61,7 @@ struct DueDateContext {
     title: String,
     course: String,
     #[serde(rename = "type")]
-    item_type: String, // "quiz" or "assignment"
+    item_type: String,
     due_date: String,
     urgent: bool,
 }
@@ -75,9 +79,9 @@ struct AssignmentContext {
     title: String,
     course_code: String,
     course_name: String,
-    item_type: String, //"assignment" or "quiz"
+    item_type: String,
     due_date: String,
-    status: String, //"pending" | "submitted" | "late" | "graded"
+    status: String,
     score: Option<String>,
     urgent: bool,
 }
@@ -85,7 +89,7 @@ struct AssignmentContext {
 #[derive(Serialize)]
 struct GradeItemContext {
     title: String,
-    item_type: String, //"assignment" or "quiz"
+    item_type: String,
     score: f32,
     max_score: f32,
     weight: f32,
@@ -108,8 +112,8 @@ struct QuizContext {
     course_name: String,
     due_date: String,
     duration_mins: i32,
-    status: String,         // "upcoming" | "open" | "completed" | "missed"
-    score: Option<String>, // e.g "18/25"
+    status: String,
+    score: Option<String>,
     total_marks: i32,
     attempt_allowed: i32,
     attempts_used: i32,
@@ -150,7 +154,7 @@ struct QuizMonitoringEventContext {
 struct AttendanceSessionContext {
     date: String,
     topic: String,
-    status: String, // "present" | "absent" | "late" | "excused"
+    status: String,
 }
 
 #[derive(Serialize)]
@@ -182,10 +186,11 @@ struct ThreadContext {
     preview: String,
 }
 
+// ─── Helper Functions ─────────────────────────────────────────────────────────
+
 fn insert_student_base(ctx: &mut Context, display_name: &str, student_id: &str) {
     ctx.insert("student_name", display_name);
     ctx.insert("student_id", student_id);
-    //TODO: Replace with real DB query for unread notifications
     let notifications: Vec<NotificationContext> = vec![];
     ctx.insert("notifications", &notifications);
 }
@@ -219,7 +224,8 @@ fn mock_quiz_questions() -> Vec<QuizAttemptQuestionContext> {
         },
         QuizAttemptQuestionContext {
             number: 2,
-            prompt: "Which browser API is commonly used to request JSON data asynchronously?".into(),
+            prompt: "Which browser API is commonly used to request JSON data asynchronously?"
+                .into(),
             options: vec![
                 "Fetch API".into(),
                 "Canvas API".into(),
@@ -264,7 +270,6 @@ fn truncate_details(details: Option<&str>) -> Option<String> {
     if details.is_empty() {
         return None;
     }
-
     Some(details.chars().take(500).collect())
 }
 
@@ -293,7 +298,6 @@ fn parse_optional_i32(value: Option<&str>, field_name: &str) -> Result<Option<i3
     if trimmed.is_empty() {
         return Ok(None);
     }
-
     trimmed
         .parse::<i32>()
         .map(Some)
@@ -311,9 +315,12 @@ fn quiz_monitoring_ready(session: &Session, quiz_id: i32) -> Result<bool, HttpRe
 }
 
 fn session_key() -> Key {
-    let secret = env::var("SESSION_SECRET").unwrap_or_else(|_| "01234567890123456789012345678901".into());
+    let secret =
+        env::var("SESSION_SECRET").unwrap_or_else(|_| "01234567890123456789012345678901".into());
     Key::from(secret.as_bytes())
 }
+
+// ─── Password Change ──────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct PasswordChangeForm {
@@ -370,8 +377,10 @@ async fn password_change_submit(
         ctx.insert("notifications", &Vec::<NotificationContext>::new());
         ctx.insert("is_admin", &(role == "admin"));
         ctx.insert("is_lecturer", &(role == "lecturer"));
-        ctx.insert("error_message", "Password must be at least 8 characters long.");
-
+        ctx.insert(
+            "error_message",
+            "Password must be at least 8 characters long.",
+        );
         let rendered = tmpl
             .render("password_change.html", &ctx)
             .unwrap_or_else(|e| e.to_string());
@@ -386,7 +395,6 @@ async fn password_change_submit(
         ctx.insert("is_admin", &(role == "admin"));
         ctx.insert("is_lecturer", &(role == "lecturer"));
         ctx.insert("error_message", "Passwords do not match.");
-
         let rendered = tmpl
             .render("password_change.html", &ctx)
             .unwrap_or_else(|e| e.to_string());
@@ -401,16 +409,11 @@ async fn password_change_submit(
 
     let password_hash = match hash_password(&form.new_password) {
         Ok(hash) => hash,
-        Err(error) => {
-            return HttpResponse::InternalServerError().body(error);
-        }
+        Err(error) => return HttpResponse::InternalServerError().body(error),
     };
 
     let result = sqlx::query(
-        r#"UPDATE users
-           SET password_hash = $1,
-               must_change_password = FALSE
-         WHERE id = $2"#,
+        "UPDATE users SET password_hash = $1, must_change_password = FALSE WHERE id = $2",
     )
     .bind(&password_hash)
     .bind(user_id)
@@ -433,6 +436,8 @@ async fn password_change_submit(
         .finish()
 }
 
+// ─── Index ────────────────────────────────────────────────────────────────────
+
 async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     match auth::redirect_authenticated_user(&session) {
         Ok(Some(response)) => return response,
@@ -449,20 +454,19 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-    #[actix_web::main]
-    async fn main() -> std::io::Result<()> {
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
-    // Load environment variables from .env (if present)
-    dotenv().ok();
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    dotenvy::dotenv().ok();
 
     let tera = Tera::new("templates/**/*").unwrap();
+    let storage = SupabaseStorage::from_env();
 
     let database_url = match env::var("DATABASE_URL") {
         Ok(val) => val,
         Err(_) => {
-            eprintln!(
-                "ERROR: DATABASE_URL not set. Create a .env with DATABASE_URL or set the environment variable."
-            );
+            eprintln!("ERROR: DATABASE_URL not set.");
             std::process::exit(1);
         }
     };
@@ -474,11 +478,11 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
         .expect("Failed to connect to PostgreSQL");
 
     let session_key = session_key();
-
     println!("Connected to server");
 
     HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(storage.clone()))
             .wrap(NormalizePath::new(TrailingSlash::Trim))
             .wrap(
                 SessionMiddleware::builder(CookieSessionStore::default(), session_key.clone())
@@ -487,57 +491,145 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
             )
             .app_data(web::Data::new(tera.clone()))
             .app_data(web::Data::new(pool.clone()))
-
-            //Static Files (CSS, JS, images)
+            // ── Static ────────────────────────────────────────────────────────
             .service(Files::new("/static", "./static"))
-
-            // Public Routes
+            // ── Public ───────────────────────────────────────────────────────
             .route("/", web::get().to(index))
             .route("/login", web::get().to(index))
             .route("/login", web::post().to(auth::login_submit))
             .route("/logout", web::post().to(auth::logout))
-
-            // Password change (first-login)
             .route("/password/change", web::get().to(password_change_page))
             .route("/password/change", web::post().to(password_change_submit))
-
-            // Student Routes
-            .route("/student/dashboard", web::get().to(student::student_dashboard))
-            .route("/student/courses", web::get().to(student::student_courses))
-            .route("/student/assignments", web::get().to(student::student_assignments))
+            // ── Student ───────────────────────────────────────────────────────
+            .route(
+                "/student/dashboard",
+                web::get().to(student::student_dashboard),
+            )
+            .route(
+                "/student/assignments",
+                web::get().to(student::student_assignments),
+            )
             .route("/student/grades", web::get().to(student::student_grades))
-            .route("/student/announcement", web::get().to(student::student_announcement))
-            .route("/student/quizzes",      web::get().to(student::student_quiz))
-            .route("/student/quizzes/{quiz_id}/attempt", web::get().to(student::student_quiz_attempt))
-            .route("/student/quizzes/{quiz_id}/take", web::get().to(student::student_quiz_take))
-            .route("/student/quizzes/{quiz_id}/monitoring-ready", web::post().to(student::mark_quiz_monitoring_ready))
-            .route("/student/quizzes/{quiz_id}/monitoring-events", web::post().to(student::save_quiz_monitoring_event))
-            .route("/student/attendance",   web::get().to(student::student_attendance))
-            .route("/student/forum",        web::get().to(student::student_forum))
-            //.route("/student/home", web::get().to(student_home)) //to be removed
-
-            // Lecturer Routes
-            .route("/lecturer/dashboard", web::get().to(lecturer::lecturer_dashboard))
-            .route("/lecturer/courses", web::get().to(lecturer::lecturer_courses_page))
-            .route("/lecturer/courses/create", web::post().to(lecturer::create_course))
-            .route("/lecturer/courses/{id}/edit",   web::post().to(lecturer::edit_course))
-            .route("/lecturer/courses/{id}/delete", web::post().to(lecturer::delete_course))
-            .route("/lecturer/assignments", web::get().to(lecturer::lecturer_assignments_page))
-            .route("/lecturer/quizzes", web::get().to(lecturer::lecturer_quizzes_page))
-            .route("/lecturer/grades", web::get().to(lecturer::lecturer_grades_page))
-            .route("/lecturer/attendance", web::get().to(lecturer::lecturer_attendance_page))
-            .route("/lecturer/forum", web::get().to(lecturer::lecturer_forum_page))
-            .route("/lecturer/profile", web::get().to(lecturer::lecturer_profile_page))
-            .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
-
-            // Admin Routes
+            .route(
+                "/student/announcement",
+                web::get().to(student::student_announcement),
+            )
+            .route("/student/quizzes", web::get().to(student::student_quiz))
+            .route(
+                "/student/quizzes/{quiz_id}/attempt",
+                web::get().to(student::student_quiz_attempt),
+            )
+            .route(
+                "/student/quizzes/{quiz_id}/take",
+                web::get().to(student::student_quiz_take),
+            )
+            .route(
+                "/student/quizzes/{quiz_id}/monitoring-ready",
+                web::post().to(student::mark_quiz_monitoring_ready),
+            )
+            .route(
+                "/student/quizzes/{quiz_id}/monitoring-events",
+                web::post().to(student::save_quiz_monitoring_event),
+            )
+            .route(
+                "/student/attendance",
+                web::get().to(student::student_attendance),
+            )
+            .route("/student/forum", web::get().to(student::student_forum))
+            .route("/student/courses", web::get().to(student::student_courses))
+            .route(
+                "/student/course/{id}/data",
+                web::get().to(student::student_course_data),
+            )
+            // ── Lecturer ──────────────────────────────────────────────────────
+            .route(
+                "/lecturer/dashboard",
+                web::get().to(lecturer::lecturer_dashboard),
+            )
+            .route(
+                "/lecturer/courses",
+                web::get().to(lecturer::lecturer_courses_page),
+            )
+            .route(
+                "/lecturer/course/{id}/data",
+                web::get().to(lecturer::lecturer_course_data),
+            )
+            .route(
+                "/lecturer/course/{id}/week/create",
+                web::post().to(lecturer::create_week),
+            )
+            .route(
+                "/lecturer/course/{cid}/week/{wid}/upload",
+                web::post().to(lecturer::upload_material),
+            )
+            .route(
+                "/lecturer/course/{cid}/week/{wid}/delete",
+                web::delete().to(lecturer::delete_week),
+            )
+            .route(
+                "/lecturer/material/{id}/delete",
+                web::delete().to(lecturer::delete_material),
+            )
+            .route(
+                "/lecturer/assignments",
+                web::get().to(lecturer::lecturer_assignments_page),
+            )
+            .route(
+                "/lecturer/quizzes",
+                web::get().to(lecturer::lecturer_quizzes_page),
+            )
+            .route(
+                "/lecturer/grades",
+                web::get().to(lecturer::lecturer_grades_page),
+            )
+            .route(
+                "/lecturer/attendance",
+                web::get().to(lecturer::lecturer_attendance_page),
+            )
+            .route(
+                "/lecturer/forum",
+                web::get().to(lecturer::lecturer_forum_page),
+            )
+            .route(
+                "/lecturer/profile",
+                web::get().to(lecturer::lecturer_profile_page),
+            )
+            .route(
+                "/lecturer/settings",
+                web::get().to(lecturer::lecturer_settings_page),
+            )
+            // ── Admin ─────────────────────────────────────────────────────────
             .route("/admin/dashboard", web::get().to(admin::admin_dashboard))
             .route("/admin/users", web::get().to(admin::admin_users_page))
-            .route("/admin/users/create", web::post().to(admin::admin_create_user))
+            .route(
+                "/admin/users/create",
+                web::post().to(admin::admin_create_user),
+            )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
-            .route("/admin/content", web::get().to(admin::admin_content_page))
             .route("/admin/settings", web::get().to(admin::admin_settings_page))
             .route("/admin/audit", web::get().to(admin::admin_audit_page))
+            .route("/admin/course/create", web::post().to(admin::create_course))
+            .route(
+                "/admin/course/{id}/assign",
+                web::post().to(admin::assign_lecturer),
+            )
+            .route(
+                "/admin/course/{id}/delete",
+                web::delete().to(admin::delete_course),
+            )
+            .route("/admin/content", web::get().to(admin::admin_content_page))
+            .route(
+                "/admin/course/{id}/enrollments",
+                web::get().to(admin::get_course_enrollments),
+            )
+            .route(
+                "/admin/course/{id}/enroll",
+                web::post().to(admin::enroll_student),
+            )
+            .route(
+                "/admin/course/{id}/unenroll",
+                web::post().to(admin::unenroll_student),
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()

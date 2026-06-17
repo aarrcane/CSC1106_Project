@@ -1,116 +1,81 @@
+use actix_multipart::Multipart;
 use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
-use tera::{Context, Tera};
-use sqlx::PgPool;
+use actix_web::{HttpResponse, Responder, web};
+use futures_util::TryStreamExt;
 use serde::Serialize;
+use serde_json::json;
+use sqlx::PgPool;
+use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
-pub async fn lecturer_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+// ─── helper: get lecturer row from session ───────────────────────────────────
+async fn get_lecturer(
+    session: &Session,
+    db: &PgPool,
+) -> Result<(crate::auth::CurrentUser, i32), HttpResponse> {
+    let user = match crate::auth::require_role(session, UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return Err(r),
     };
+    let row = match sqlx::query!("SELECT id FROM lecturers WHERE user_id = $1", user.id)
+        .fetch_optional(db)
+        .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => return Err(HttpResponse::Forbidden().body("No lecturer profile")),
+        Err(e) => return Err(HttpResponse::InternalServerError().body(e.to_string())),
+    };
+    Ok((user, row.id))
+}
 
+// ─── base context helper ─────────────────────────────────────────────────────
+fn base_ctx(user: &crate::auth::CurrentUser, active: &str) -> Context {
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
     ctx.insert("student_name", &user.display_name);
     ctx.insert("student_id", "");
     ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "dashboard");
+    ctx.insert("active_page", active);
     ctx.insert("is_lecturer", &true);
-    ctx.insert("assigned_courses_count", &4);
-    ctx.insert("student_count", &128);
-    ctx.insert("pending_grades_count", &17);
-    ctx.insert("forum_questions_count", &9);
+    ctx
+}
 
-    #[derive(Serialize)]
-    struct LecturerCourse {
-        code: String,
-        name: String,
-        term: String,
-        students: i32,
-        status: String,
-    }
-    let assigned_courses = vec![
-        LecturerCourse { code: "CSC2101".into(), name: "Web Development II".into(), term: "2025/26 Trimester 3".into(), students: 42, status: "Ongoing".into() },
-        LecturerCourse { code: "CSC2203".into(), name: "Software Engineering".into(), term: "2025/26 Trimester 3".into(), students: 38, status: "Ongoing".into() },
-        LecturerCourse { code: "CSC2304".into(), name: "Mobile App Development".into(), term: "2025/26 Trimester 3".into(), students: 31, status: "Ongoing".into() },
-        LecturerCourse { code: "CSC2405".into(), name: "Cloud Fundamentals".into(), term: "2025/26 Trimester 3".into(), students: 17, status: "Preparing".into() },
-    ];
-    ctx.insert("assigned_courses", &assigned_courses);
+// ─── page handlers ────────────────────────────────────────────────────────────
 
-    #[derive(Serialize)]
-    struct PendingSubmission {
-        title: String,
-        course: String,
-        submitted_by: String,
-        due: String,
-        pending_count: i32,
-    }
-    let pending_submissions = vec![
-        PendingSubmission { title: "Assignment 2".into(), course: "CSC2101".into(), submitted_by: "14 students".into(), due: "28 May 2026".into(), pending_count: 14 },
-        PendingSubmission { title: "Lab Report 3".into(), course: "CSC2203".into(), submitted_by: "9 students".into(), due: "30 May 2026".into(), pending_count: 9 },
-    ];
-    ctx.insert("pending_submissions", &pending_submissions);
-
-    #[derive(Serialize)]
-    struct ForumQuestion {
-        title: String,
-        course: String,
-        author: String,
-        when: String,
-    }
-    let forum_questions = vec![
-        ForumQuestion { title: "Can we use CSS Grid for the layout?".into(), course: "CSC2101".into(), author: "Aisha".into(), when: "2h ago".into() },
-        ForumQuestion { title: "Is the quiz open-book?".into(), course: "CSC2203".into(), author: "Daniel".into(), when: "5h ago".into() },
-        ForumQuestion { title: "Deployment issue on Windows".into(), course: "CSC2304".into(), author: "Wei Ming".into(), when: "1d ago".into() },
-    ];
-    ctx.insert("forum_questions", &forum_questions);
-
-    #[derive(Serialize)]
-    struct UpcomingEvent {
-        title: String,
-        course: String,
-        when: String,
-    }
-    let upcoming_events = vec![
-        UpcomingEvent { title: "Lecture 7: Routing".into(), course: "CSC2101".into(), when: "Tomorrow 9:00 AM".into() },
-        UpcomingEvent { title: "Assignment 2 due".into(), course: "CSC2101".into(), when: "28 May 2026".into() },
-        UpcomingEvent { title: "Lab session".into(), course: "CSC2203".into(), when: "29 May 2026".into() },
-    ];
-    ctx.insert("upcoming_events", &upcoming_events);
-
+pub async fn lecturer_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let mut ctx = base_ctx(&user, "dashboard");
+    ctx.insert("assigned_courses_count", &0);
+    ctx.insert("student_count", &0);
+    ctx.insert("pending_grades_count", &0);
+    ctx.insert("forum_questions_count", &0);
+    ctx.insert("assigned_courses", &Vec::<String>::new());
+    ctx.insert("pending_submissions", &Vec::<String>::new());
+    ctx.insert("forum_questions", &Vec::<String>::new());
+    ctx.insert("upcoming_events", &Vec::<String>::new());
     let rendered = match tmpl.render("lecturer/dashboard.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
+
+// ─── COURSES LIST ─────────────────────────────────────────────────────────────
 
 pub async fn lecturer_courses_page(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
     session: Session,
 ) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+    let (user, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
     };
 
-    // Get lecturer.id from users.id
-    let lecturer = match sqlx::query!(
-        "SELECT id FROM lecturers WHERE user_id = $1", user.id
-    )
-    .fetch_optional(db.get_ref())
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found"),
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-
-    // Fetch courses from DB
     #[derive(Serialize)]
     struct CourseRow {
         id: i32,
@@ -118,58 +83,245 @@ pub async fn lecturer_courses_page(
         name: String,
         description: String,
         status: String,
+        trimester: String,
     }
 
     let courses = match sqlx::query_as!(
         CourseRow,
-        "SELECT id, course_code AS code, course_name AS name,
-                COALESCE(description, '') AS \"description!\",
-                COALESCE(status, 'Preparing') AS \"status!\"
-         FROM courses
-         WHERE lecturer_id = $1
-         ORDER BY created_at DESC",
-        lecturer.id
+        r#"SELECT id,
+                  course_code                          AS code,
+                  course_name                          AS name,
+                  COALESCE(description, '')            AS "description!",
+                  COALESCE(status, 'Preparing')        AS "status!",
+                  COALESCE(trimester, '')              AS "trimester!"
+           FROM courses
+           WHERE lecturer_id = $1
+           ORDER BY created_at DESC"#,
+        lecturer_id
     )
     .fetch_all(db.get_ref())
     .await
     {
-        Ok(rows) => rows,
+        Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
 
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "courses");
-    ctx.insert("is_lecturer", &true);
-    ctx.insert("courses", &courses);
+    let mut ctx = base_ctx(&user, "courses");
     ctx.insert("total_courses", &courses.len());
+    ctx.insert("courses", &courses);
 
     let rendered = match tmpl.render("lecturer/course.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn lecturer_assignments_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+// ─── CREATE WEEK ──────────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct CreateWeekForm {
+    pub week_number: i32,
+    pub title: String,
+}
+
+pub async fn create_week(
+    cid: web::Path<i32>,
+    form: web::Json<CreateWeekForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let (_, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let course_id = cid.into_inner();
+
+    // Verify ownership
+    let owns = sqlx::query!(
+        "SELECT id FROM courses WHERE id = $1 AND lecturer_id = $2",
+        course_id,
+        lecturer_id
+    )
+    .fetch_optional(db.get_ref())
+    .await;
+
+    if !matches!(owns, Ok(Some(_))) {
+        return HttpResponse::Forbidden().body("Not your course");
+    }
+
+    let result = sqlx::query!(
+        "INSERT INTO course_weeks (course_id, week_number, title) VALUES ($1, $2, $3)",
+        course_id,
+        form.week_number,
+        form.title
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Week created" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── UPLOAD FILE TO WEEK ──────────────────────────────────────────────────────
+
+pub async fn upload_material(
+    mut payload: actix_multipart::Multipart,
+    db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
+    session: Session,
+    path: web::Path<(i32, i32)>, // (course_id, week_id)
+) -> impl Responder {
+    use futures_util::TryStreamExt as _;
+
+    // ✅ keep the user binding, don't prefix with _
+    let user = match crate::auth::require_role(&session, crate::auth::UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return r,
     };
 
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "assignments");
-    ctx.insert("is_lecturer", &true);
+    let (course_id, week_id) = path.into_inner();
 
+    while let Ok(Some(mut field)) = payload.try_next().await {
+        let cd = field.content_disposition().unwrap();
+        let filename = cd.get_filename().unwrap_or("file").to_string();
+
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = field.try_next().await.unwrap() {
+            bytes.extend_from_slice(&chunk);
+        }
+
+        let content_type = field
+            .content_type()
+            .map(|m| m.to_string())
+            .unwrap_or_else(|| "application/pdf".to_string());
+
+        let object_path = format!("courses/{course_id}/week_{week_id}/{filename}");
+
+        if let Err(e) = storage.upload(&object_path, bytes, &content_type).await {
+            return HttpResponse::InternalServerError().body(e);
+        }
+
+        if let Err(e) = sqlx::query!(
+    "INSERT INTO course_materials (week_id, course_id, title, file_path, uploaded_by, material_type)
+     VALUES ($1, $2, $3, $4, $5, $6)",
+    week_id,
+    course_id,
+    filename,
+    object_path,
+    user.id,
+    "pdf",        // or "lecture_note" etc.
+)
+        .execute(db.get_ref())
+        .await
+        {
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+    }
+
+    HttpResponse::SeeOther()
+        .insert_header(("Location", "/lecturer/courses"))
+        .finish()
+}
+
+// ─── DELETE WEEK ──────────────────────────────────────────────────────────────
+
+pub async fn delete_week(
+    path: web::Path<(i32, i32)>, // (course_id, week_id)
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let (_, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+    let (course_id, week_id) = path.into_inner();
+
+    let valid = sqlx::query!(
+        "SELECT cw.id FROM course_weeks cw
+         JOIN courses c ON c.id = cw.course_id
+         WHERE cw.id = $1 AND c.id = $2 AND c.lecturer_id = $3",
+        week_id,
+        course_id,
+        lecturer_id
+    )
+    .fetch_optional(db.get_ref())
+    .await;
+
+    if !matches!(valid, Ok(Some(_))) {
+        return HttpResponse::Forbidden().body("Invalid week or course");
+    }
+
+    // Delete files from disk
+    let _ = std::fs::remove_dir_all(format!("uploads/courses/{}/week_{}", course_id, week_id));
+
+    // DB cascade deletes course_materials with this week_id automatically
+    let result = sqlx::query!("DELETE FROM course_weeks WHERE id = $1", week_id)
+        .execute(db.get_ref())
+        .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Week deleted" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── DELETE SINGLE FILE ───────────────────────────────────────────────────────
+
+pub async fn delete_material(
+    path: web::Path<i32>,
+    db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, crate::auth::UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let material_id = path.into_inner();
+
+    // Fetch the stored path before deleting from DB
+    let material = match sqlx::query!(
+        "SELECT file_path FROM course_materials WHERE id = $1",
+        material_id
+    )
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(m)) => m,
+        Ok(None) => return HttpResponse::NotFound().body("Material not found"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    // Delete from Supabase Storage
+    if let Err(e) = storage.delete(&material.file_path).await {
+        return HttpResponse::InternalServerError().body(e);
+    }
+
+    // Delete from DB
+    if let Err(e) = sqlx::query!("DELETE FROM course_materials WHERE id = $1", material_id)
+        .execute(db.get_ref())
+        .await
+    {
+        return HttpResponse::InternalServerError().body(e.to_string());
+    }
+
+    HttpResponse::Ok().finish()
+}
+
+// ─── OTHER PAGES (unchanged) ──────────────────────────────────────────────────
+
+pub async fn lecturer_assignments_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+    let ctx = base_ctx(&user, "assignments");
     let rendered = match tmpl.render("lecturer/assignments.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -181,39 +333,24 @@ pub async fn lecturer_quizzes_page(
     session: Session,
 ) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "quizzes");
-    ctx.insert("is_lecturer", &true);
+    let mut ctx = base_ctx(&user, "quizzes");
 
     let events = match sqlx::query_as::<_, crate::QuizMonitoringEventContext>(
-        "SELECT
-            id,
-            quiz_id,
-            student_display_name,
-            event_type,
-            severity,
-            details,
-            TO_CHAR(occurred_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') AS occurred_at
-         FROM quiz_monitoring_events
-         ORDER BY occurred_at DESC
-         LIMIT 50",
+        "SELECT id, quiz_id, student_display_name, event_type, severity, details,
+         TO_CHAR(occurred_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') AS occurred_at
+         FROM quiz_monitoring_events ORDER BY occurred_at DESC LIMIT 50",
     )
     .fetch_all(db.get_ref())
     .await
     {
-        Ok(events) => events,
+        Ok(e) => e,
         Err(error) => {
             ctx.insert(
                 "monitoring_load_error",
-                &format!("Could not load quiz monitoring events: {error}"),
+                &format!("Could not load events: {error}"),
             );
             Vec::new()
         }
@@ -222,7 +359,7 @@ pub async fn lecturer_quizzes_page(
     ctx.insert("monitoring_event_count", &events.len());
 
     let rendered = match tmpl.render("lecturer/quizzes.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -230,20 +367,12 @@ pub async fn lecturer_quizzes_page(
 
 pub async fn lecturer_grades_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "grades");
-    ctx.insert("is_lecturer", &true);
-
+    let ctx = base_ctx(&user, "grades");
     let rendered = match tmpl.render("lecturer/grades.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -251,20 +380,12 @@ pub async fn lecturer_grades_page(tmpl: web::Data<Tera>, session: Session) -> im
 
 pub async fn lecturer_attendance_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "attendance");
-    ctx.insert("is_lecturer", &true);
-
+    let ctx = base_ctx(&user, "attendance");
     let rendered = match tmpl.render("lecturer/attendance.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -272,20 +393,12 @@ pub async fn lecturer_attendance_page(tmpl: web::Data<Tera>, session: Session) -
 
 pub async fn lecturer_forum_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "forum");
-    ctx.insert("is_lecturer", &true);
-
+    let ctx = base_ctx(&user, "forum");
     let rendered = match tmpl.render("lecturer/forum.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -293,20 +406,12 @@ pub async fn lecturer_forum_page(tmpl: web::Data<Tera>, session: Session) -> imp
 
 pub async fn lecturer_profile_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "profile");
-    ctx.insert("is_lecturer", &true);
-
+    let ctx = base_ctx(&user, "profile");
     let rendered = match tmpl.render("lecturer/profile.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -314,217 +419,76 @@ pub async fn lecturer_profile_page(tmpl: web::Data<Tera>, session: Session) -> i
 
 pub async fn lecturer_settings_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
-
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "settings");
-    ctx.insert("is_lecturer", &true);
-
+    let ctx = base_ctx(&user, "settings");
     let rendered = match tmpl.render("lecturer/settings.html", &ctx) {
-        Ok(html) => html,
+        Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-use actix_multipart::Multipart;
-use futures_util::TryStreamExt;
-
-pub async fn create_course(
-    mut payload: Multipart,
+pub async fn lecturer_course_data(
+    cid: web::Path<i32>,
     db: web::Data<PgPool>,
     session: Session,
 ) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
+    let (_, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
     };
+    let course_id = cid.into_inner();
 
-    let lecturer = match sqlx::query!(
-        "SELECT id FROM lecturers WHERE user_id = $1",
-        user.id
+    // Verify ownership
+    let valid = sqlx::query!(
+        "SELECT id FROM courses WHERE id = $1 AND lecturer_id = $2",
+        course_id,
+        lecturer_id
     )
     .fetch_optional(db.get_ref())
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found"),
-        Err(e)   => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
+    .await;
 
-    let mut course_code = String::new();
-    let mut course_name = String::new();
-    let mut description = String::new();
-    let mut pdf_bytes: Option<Vec<u8>> = None;
-    let mut pdf_filename = String::new();
-
-while let Ok(Some(mut field)) = payload.try_next().await {
-    let field_name = field.name().unwrap_or("").to_string();
-    let filename = field
-        .content_disposition()
-        .and_then(|cd| cd.get_filename())
-        .unwrap_or("material.pdf")
-        .to_string();
-    let mut value = Vec::new();
-    while let Ok(Some(chunk)) = field.try_next().await {
-        value.extend_from_slice(&chunk);
-    }
-    match field_name.as_str() {
-        "course_code" => course_code = String::from_utf8_lossy(&value).to_string(),
-        "course_name" => course_name = String::from_utf8_lossy(&value).to_string(),
-        "description" => description = String::from_utf8_lossy(&value).to_string(),
-        "material"    => {
-            if !value.is_empty() {
-                pdf_filename = filename;
-                pdf_bytes = Some(value);
-            }
-        }
-        _ => {}
-    }
-}
-
-    if course_code.is_empty() || course_name.is_empty() {
-        return HttpResponse::BadRequest().body("course_code and course_name are required");
+    if !matches!(valid, Ok(Some(_))) {
+        return HttpResponse::Forbidden().body("Not your course");
     }
 
-    let course = match sqlx::query!(
-        "INSERT INTO courses (course_code, course_name, description, lecturer_id)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id",
-        course_code,
-        course_name,
-        description,
-        lecturer.id
+    let weeks_raw = match sqlx::query!(
+        "SELECT id, week_number, title FROM course_weeks
+         WHERE course_id = $1 ORDER BY week_number ASC",
+        course_id
     )
-    .fetch_one(db.get_ref())
+    .fetch_all(db.get_ref())
     .await
     {
-        Ok(row) => row,
-        Err(e)  => return HttpResponse::InternalServerError().body(e.to_string()),
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
 
-    if let Some(bytes) = pdf_bytes {
-        let file_path = format!("uploads/courses/{}/{}", course.id, pdf_filename);
-        let _ = std::fs::create_dir_all(format!("uploads/courses/{}", course.id));
-        let _ = std::fs::write(&file_path, &bytes);
-
-        let _ = sqlx::query!(
-            "INSERT INTO course_materials (course_id, uploaded_by, title, file_path, material_type)
-             VALUES ($1, $2, $3, $4, $5)",
-            course.id,
-            user.id,
-            pdf_filename,
-            file_path,
-            "pdf"
+    let mut weeks = Vec::new();
+    for w in weeks_raw {
+        let files = sqlx::query!(
+            "SELECT id, title, file_path FROM course_materials
+             WHERE week_id = $1 ORDER BY uploaded_at ASC",
+            w.id
         )
-        .execute(db.get_ref())
-        .await;
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default();
+
+        let file_list: Vec<serde_json::Value> = files
+            .iter()
+            .map(|f| json!({ "id": f.id, "title": f.title, "file_path": f.file_path }))
+            .collect();
+
+        weeks.push(json!({
+            "id": w.id,
+            "week_number": w.week_number,
+            "title": w.title,
+            "files": file_list
+        }));
     }
 
-    HttpResponse::Ok().body("Course created")
-}
-
-#[derive(serde::Deserialize)]
-pub struct EditCourseForm {
-    pub course_code: String,
-    pub course_name: String,
-    pub description: Option<String>,
-    pub status: Option<String>,
-    pub trimester: Option<String>,
-    pub max_students: Option<i32>,
-}
-
-pub async fn edit_course(
-    cid: web::Path<i32>,
-    form: web::Json<EditCourseForm>,
-    db: web::Data<PgPool>,
-    session: Session,
-) -> impl Responder {
-    let course_id = cid.into_inner();
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let lecturer = match sqlx::query!(
-        "SELECT id FROM lecturers WHERE user_id = $1", user.id
-    )
-    .fetch_optional(db.get_ref())
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found"),
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-
-    let result = sqlx::query!(
-        "UPDATE courses
-        SET course_code  = $1,
-            course_name  = $2,
-            description  = $3,
-            status       = $4,
-            trimester    = $5,
-            max_students = $6
-        WHERE id = $7 AND lecturer_id = $8",
-        form.course_code,
-        form.course_name,
-        form.description.as_deref().unwrap_or(""),
-        form.status.as_deref().unwrap_or("Preparing"),
-        form.trimester.as_deref().unwrap_or(""),
-        form.max_students,   // Option<i32> — sqlx handles NULL automatically
-        course_id,
-        lecturer.id
-    )
-    .execute(db.get_ref())
-    .await;
-
-    match result {
-        Ok(_)  => HttpResponse::Ok().body("Course updated"),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
-}
-
-pub async fn delete_course(
-    cid: web::Path<i32>,
-    db: web::Data<PgPool>,
-    session: Session,
-) -> impl Responder {
-    let course_id = cid.into_inner();
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let lecturer = match sqlx::query!(
-        "SELECT id FROM lecturers WHERE user_id = $1", user.id
-    )
-    .fetch_optional(db.get_ref())
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found"),
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-
-    let course_folder = format!("uploads/courses/{}", course_id);
-    let _ = std::fs::remove_dir_all(&course_folder);
-
-    let result = sqlx::query!(
-        "DELETE FROM courses WHERE id = $1 AND lecturer_id = $2",
-        course_id,
-        lecturer.id
-    )
-    .execute(db.get_ref())
-    .await;
-
-    match result {
-        Ok(_)  => HttpResponse::Ok().body("Course deleted"),
-        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
-    }
+    HttpResponse::Ok().json(json!({ "weeks": weeks }))
 }

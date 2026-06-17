@@ -4,6 +4,7 @@ use tera::{Context, Tera};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::PgPool;
+use serde_json::json;
 
 use crate::auth::UserRole;
 
@@ -325,11 +326,61 @@ pub async fn admin_create_user(
         .finish()
 }
 
-pub async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn admin_courses_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
+
+    #[derive(Serialize)]
+    struct CourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        status: String,
+        trimester: String,
+        lecturer_name: String,  // "Unassigned" if NULL
+    }
+
+    let courses = sqlx::query_as!(
+        CourseRow,
+        r#"SELECT
+            c.id,
+            c.course_code   AS code,
+            c.course_name   AS name,
+            COALESCE(c.status, 'Preparing')     AS "status!",
+            COALESCE(c.trimester, '')            AS "trimester!",
+            COALESCE(u.display_name, 'Unassigned') AS "lecturer_name!"
+           FROM courses c
+           LEFT JOIN lecturers l ON l.id = c.lecturer_id
+           LEFT JOIN users u     ON u.id = l.user_id
+           ORDER BY c.created_at DESC"#
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    // Fetch all lecturers for the assign dropdown
+    #[derive(Serialize)]
+    struct LecturerOption {
+        id: i32,
+        name: String,
+    }
+
+    let lecturers = sqlx::query_as!(
+        LecturerOption,
+        r#"SELECT l.id, u.display_name AS name
+           FROM lecturers l
+           JOIN users u ON u.id = l.user_id
+           ORDER BY u.display_name"#
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
 
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
@@ -338,6 +389,8 @@ pub async fn admin_courses_page(tmpl: web::Data<Tera>, session: Session) -> impl
     ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
     ctx.insert("active_page", "courses");
     ctx.insert("is_admin", &true);
+    ctx.insert("courses", &courses);
+    ctx.insert("lecturers", &lecturers);  // for the assign dropdown
 
     let rendered = match tmpl.render("admin/course_administration.html", &ctx) {
         Ok(html) => html,
@@ -488,4 +541,215 @@ pub async fn admin_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Re
     };
 
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+#[derive(serde::Deserialize)]
+pub struct CreateCourseForm {
+    pub course_code: String,
+    pub course_name: String,
+    pub description: Option<String>,
+    pub trimester: Option<String>,
+    pub max_students: Option<i32>,
+    pub lecturer_id: Option<i32>,
+}
+
+pub async fn create_course(
+    form: web::Json<CreateCourseForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let result = sqlx::query!(
+    "INSERT INTO courses (course_code, course_name, description, trimester, max_students, lecturer_id)
+     VALUES ($1, $2, $3, $4, $5, $6)",
+    form.course_code,
+    form.course_name,
+    form.description.as_deref().unwrap_or(""),
+    form.trimester.as_deref().unwrap_or(""),
+    form.max_students,
+    form.lecturer_id,
+)
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course created" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct AssignLecturerForm {
+    pub lecturer_id: i32,
+}
+
+pub async fn assign_lecturer(
+    cid: web::Path<i32>,
+    form: web::Json<AssignLecturerForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let result = sqlx::query!(
+        "UPDATE courses SET lecturer_id = $1 WHERE id = $2",
+        form.lecturer_id,
+        cid.into_inner()
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Lecturer assigned" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+pub async fn delete_course(
+    cid: web::Path<i32>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let course_id = cid.into_inner();
+
+    // Delete uploaded files
+    let _ = std::fs::remove_dir_all(format!("uploads/courses/{}", course_id));
+
+    let result = sqlx::query!(
+        "DELETE FROM courses WHERE id = $1",
+        course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course deleted" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── GET enrolled students for a course ──────────────────────────────────────
+pub async fn get_course_enrollments(
+    cid: web::Path<i32>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let enrolled = sqlx::query!(
+        r#"SELECT s.id AS student_id, u.display_name, u.email
+           FROM enrollments e
+           JOIN students s ON s.id = e.student_id
+           JOIN users u ON u.id = s.user_id
+           WHERE e.course_id = $1
+           ORDER BY u.display_name ASC"#,
+        course_id
+    )
+    .fetch_all(db.get_ref())
+    .await;
+
+    let all_students = sqlx::query!(
+        r#"SELECT s.id AS student_id, u.display_name, u.email
+           FROM students s
+           JOIN users u ON u.id = s.user_id
+           ORDER BY u.display_name ASC"#
+    )
+    .fetch_all(db.get_ref())
+    .await;
+
+    match (enrolled, all_students) {
+        (Ok(enrolled), Ok(all)) => {
+            let enrolled_ids: Vec<i32> = enrolled.iter().map(|r| r.student_id).collect();
+            let all_list: Vec<serde_json::Value> = all.iter().map(|r| {
+                json!({
+                    "student_id": r.student_id,
+                    "display_name": r.display_name,
+                    "email": r.email,
+                    "enrolled": enrolled_ids.contains(&r.student_id)
+                })
+            }).collect();
+            HttpResponse::Ok().json(json!({ "students": all_list }))
+        }
+        _ => HttpResponse::InternalServerError().body("Failed to load enrollment data"),
+    }
+}
+
+// ─── ENROLL a student into a course ──────────────────────────────────────────
+#[derive(serde::Deserialize)]
+pub struct EnrollForm {
+    pub student_id: i32,
+}
+
+pub async fn enroll_student(
+    cid: web::Path<i32>,
+    form: web::Json<EnrollForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let result = sqlx::query!(
+        "INSERT INTO enrollments (student_id, course_id)
+         VALUES ($1, $2)
+         ON CONFLICT (student_id, course_id) DO NOTHING",
+        form.student_id, course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student enrolled" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+// ─── UNENROLL a student from a course ────────────────────────────────────────
+#[derive(serde::Deserialize)]
+pub struct UnenrollForm {
+    pub student_id: i32,
+}
+
+pub async fn unenroll_student(
+    cid: web::Path<i32>,
+    form: web::Json<UnenrollForm>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    match crate::auth::require_role(&session, crate::auth::UserRole::Admin) {
+        Ok(_) => {}
+        Err(r) => return r,
+    }
+    let course_id = cid.into_inner();
+
+    let result = sqlx::query!(
+        "DELETE FROM enrollments WHERE student_id = $1 AND course_id = $2",
+        form.student_id, course_id
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student unenrolled" })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }
