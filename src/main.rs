@@ -503,59 +503,44 @@ async fn main() -> std::io::Result<()> {
             .route("/password/change", web::get().to(password_change_page))
             .route("/password/change", web::post().to(password_change_submit))
             // ── Student ───────────────────────────────────────────────────────
-            .route(
-                "/student/dashboard",
-                web::get().to(student::student_dashboard),
-            )
-            .route(
-                "/student/assignments",
-                web::get().to(student::student_assignments),
-            )
+            .route("/student/dashboard", web::get().to(student::student_dashboard))
+            .route("/student/courses", web::get().to(student::student_courses))
+            .route("/student/assignments", web::get().to(student::student_assignments))
             .route("/student/grades", web::get().to(student::student_grades))
-            .route(
-                "/student/announcement",
-                web::get().to(student::student_announcement),
-            )
-            .route("/student/quizzes", web::get().to(student::student_quiz))
+            .route("/student/announcement", web::get().to(student::student_announcement))
+            .route("/student/attendance", web::get().to(student::student_attendance))
+            .route("/student/forum", web::get().to(student::student_forum))
+            .route("/student/course/{id}/data", web::get().to(student::student_course_data))
+            // ── Student quizzes ───────────────────────
+            .route("/student/quizzes", web::get().to(student_quiz::quiz_list))
             .route(
                 "/student/quizzes/{quiz_id}/attempt",
-                web::get().to(student::student_quiz_attempt),
+                web::get().to(student_quiz::attempt_gate),
             )
             .route(
                 "/student/quizzes/{quiz_id}/take",
-                web::get().to(student::student_quiz_take),
+                web::get().to(student_quiz::take),
+            )
+            .route(
+                "/student/quizzes/{quiz_id}/submit",
+                web::post().to(student_quiz::submit),
+            )
+            .route(
+                "/student/quizzes/{quiz_id}/result",
+                web::get().to(student_quiz::result),
             )
             .route(
                 "/student/quizzes/{quiz_id}/monitoring-ready",
-                web::post().to(student::mark_quiz_monitoring_ready),
+                web::post().to(student_quiz::mark_monitoring_ready),
             )
             .route(
                 "/student/quizzes/{quiz_id}/monitoring-events",
-                web::post().to(student::save_quiz_monitoring_event),
-            )
-            .route(
-                "/student/attendance",
-                web::get().to(student::student_attendance),
-            )
-            .route("/student/forum", web::get().to(student::student_forum))
-            .route("/student/courses", web::get().to(student::student_courses))
-            .route(
-                "/student/course/{id}/data",
-                web::get().to(student::student_course_data),
+                web::post().to(student_quiz::save_monitoring_event),
             )
             // ── Lecturer ──────────────────────────────────────────────────────
-            .route(
-                "/lecturer/dashboard",
-                web::get().to(lecturer::lecturer_dashboard),
-            )
-            .route(
-                "/lecturer/courses",
-                web::get().to(lecturer::lecturer_courses_page),
-            )
-            .route(
-                "/lecturer/course/{id}/data",
-                web::get().to(lecturer::lecturer_course_data),
-            )
+            .route("/lecturer/dashboard", web::get().to(lecturer::lecturer_dashboard))
+            .route("/lecturer/courses", web::get().to(lecturer::lecturer_courses_page))
+            .route("/lecturer/course/{id}/data", web::get().to(lecturer::lecturer_course_data))
             .route(
                 "/lecturer/course/{id}/week/create",
                 web::post().to(lecturer::create_week),
@@ -572,62 +557,12 @@ async fn main() -> std::io::Result<()> {
                 "/lecturer/material/{id}/delete",
                 web::delete().to(lecturer::delete_material),
             )
-            .route(
-                "/lecturer/assignments",
-                web::get().to(lecturer::lecturer_assignments_page),
-            )
-            .route(
-                "/lecturer/quizzes",
-                web::get().to(lecturer::lecturer_quizzes_page),
-            )
-            .route(
-                "/lecturer/grades",
-                web::get().to(lecturer::lecturer_grades_page),
-            )
-            .route(
-                "/lecturer/attendance",
-                web::get().to(lecturer::lecturer_attendance_page),
-            )
-            .route(
-                "/lecturer/forum",
-                web::get().to(lecturer::lecturer_forum_page),
-            )
-            .route(
-                "/lecturer/profile",
-                web::get().to(lecturer::lecturer_profile_page),
-            )
-            .route(
-                "/lecturer/settings",
-                web::get().to(lecturer::lecturer_settings_page),
-            )
-            // ── Admin ─────────────────────────────────────────────────────────
-            .route("/student/assignments", web::get().to(student::student_assignments))
-            .route("/student/grades", web::get().to(student::student_grades))
-            .route("/student/announcement", web::get().to(student::student_announcement))
-            .route("/student/quizzes", web::get().to(student_quiz::quiz_list))
-            .route("/student/quizzes/{quiz_id}/attempt", web::get().to(student_quiz::attempt_gate))
-            .route("/student/quizzes/{quiz_id}/take", web::get().to(student_quiz::take))
-            .route("/student/quizzes/{quiz_id}/submit", web::post().to(student_quiz::submit))
-            .route("/student/quizzes/{quiz_id}/result", web::get().to(student_quiz::result))
-            .route("/student/quizzes/{quiz_id}/monitoring-ready", web::post().to(student_quiz::mark_monitoring_ready))
-            .route("/student/quizzes/{quiz_id}/monitoring-events", web::post().to(student_quiz::save_monitoring_event))
-            .route("/student/attendance",   web::get().to(student::student_attendance))
-            .route("/student/forum",        web::get().to(student::student_forum))
-            //.route("/student/home", web::get().to(student_home)) //to be removed
-
-            // Lecturer Routes
-            .route("/lecturer/dashboard", web::get().to(lecturer::lecturer_dashboard))
-            .route("/lecturer/courses", web::get().to(lecturer::lecturer_courses_page))
-            .route("/lecturer/courses/create", web::post().to(lecturer::create_course))
-            .route("/lecturer/courses/{id}/edit",   web::post().to(lecturer::edit_course))
-            .route("/lecturer/courses/{id}/delete", web::post().to(lecturer::delete_course))
             .route("/lecturer/assignments", web::get().to(lecturer::lecturer_assignments_page))
             .route("/lecturer/quizzes", web::get().to(lecturer::lecturer_quizzes_page))
             .route("/lecturer/grades", web::get().to(lecturer::lecturer_grades_page))
             .route("/lecturer/attendance", web::get().to(lecturer::lecturer_attendance_page))
             .route("/lecturer/forum", web::get().to(lecturer::lecturer_forum_page))
             .route("/lecturer/profile", web::get().to(lecturer::lecturer_profile_page))
-            .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
             .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
             .configure(lecturer_quiz::config)
 

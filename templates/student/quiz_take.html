@@ -105,7 +105,7 @@
 <!-- Answer submission + timer -->
 <script>
   (function () {
-    const SUBMIT_URL = "{{ submit_url }}";
+    const SUBMIT_URL = "{{ submit_url | safe }}";
     const RESULT_FALLBACK = "/student/quizzes";
     let remaining = {{ quiz_seconds }};
     let submitting = false;

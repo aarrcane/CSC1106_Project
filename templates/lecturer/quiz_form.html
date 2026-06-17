@@ -114,7 +114,7 @@
 
 {% block extra_js %}
 <script>
-  const FORM_ACTION = "{{ form_action }}";
+  const FORM_ACTION = "{{ form_action | safe }}";
   const QUIZ = {% if quiz %}{{ quiz | json_encode() | safe }}{% else %}null{% endif %};
 
   const questionsEl = document.getElementById("questions");
