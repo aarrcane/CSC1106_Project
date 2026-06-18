@@ -21,6 +21,7 @@ mod student_quiz;
 mod lecturer;
 mod storage;
 mod student;
+mod quiz_engine;
 use storage::SupabaseStorage;
 
 // ─── Shared Context Types ─────────────────────────────────────────────────────
@@ -602,6 +603,7 @@ async fn main() -> std::io::Result<()> {
                 "/admin/course/{id}/unenroll",
                 web::post().to(admin::unenroll_student),
             )
+            .configure(quiz_engine::config)
     })
     .bind(("127.0.0.1", 8080))?
     .run()
