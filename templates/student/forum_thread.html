@@ -25,8 +25,8 @@
               <h4 class="fw-bold mb-1">{{ thread.title }}</h4>
               <div class="d-flex align-items-center gap-2 flex-wrap small text-muted">
                 <span>{{ thread.author }}</span>
-                <span>{{ thread.created_at }}</span>
-                {% if thread.edited_at %}<span>Edited {{ thread.edited_at }}</span>{% endif %}
+                <span data-local-time="{{ thread.created_at }}">{{ thread.created_at }}</span>
+                {% if thread.edited_at %}<span>Edited <span data-local-time="{{ thread.edited_at }}">{{ thread.edited_at }}</span></span>{% endif %}
               </div>
             </div>
             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -50,7 +50,7 @@
 
           {% if thread.deleted_at %}
           <div class="alert alert-secondary mb-0">
-            This thread was deleted by {{ thread.deleted_by_name | default(value="a user") }} on {{ thread.deleted_at }}.
+            This thread was deleted by {{ thread.deleted_by_name | default(value="a user") }} on <span data-local-time="{{ thread.deleted_at }}">{{ thread.deleted_at }}</span>.
             {% if thread.delete_reason %}<div class="small mt-1">Reason: {{ thread.delete_reason }}</div>{% endif %}
           </div>
           {% else %}
@@ -122,14 +122,14 @@
           <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
             <div>
               <strong>{{ post.author }}</strong>
-              <span class="text-muted small ms-2">{{ post.created_at }}</span>
-              {% if post.edited_at %}<span class="text-muted small ms-2">Edited {{ post.edited_at }}</span>{% endif %}
+              <span class="text-muted small ms-2" data-local-time="{{ post.created_at }}">{{ post.created_at }}</span>
+              {% if post.edited_at %}<span class="text-muted small ms-2">Edited <span data-local-time="{{ post.edited_at }}">{{ post.edited_at }}</span></span>{% endif %}
             </div>
           </div>
 
           {% if post.deleted_at %}
           <div class="text-muted fst-italic">
-            Reply deleted by {{ post.deleted_by_name | default(value="a user") }} on {{ post.deleted_at }}.
+            Reply deleted by {{ post.deleted_by_name | default(value="a user") }} on <span data-local-time="{{ post.deleted_at }}">{{ post.deleted_at }}</span>.
             {% if post.delete_reason %}<span>Reason: {{ post.delete_reason }}</span>{% endif %}
           </div>
           {% else %}
@@ -297,4 +297,20 @@
     .reply-depth-4 { margin-left: 0.75rem; }
   }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.querySelectorAll('[data-local-time]').forEach((element) => {
+    const value = element.dataset.localTime;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      element.textContent = date.toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      });
+      element.title = value;
+    }
+  });
+</script>
 {% endblock %}

@@ -85,7 +85,7 @@
                 <span class="badge bg-secondary-subtle text-secondary" style="font-size:0.65rem;">{{ tag }}</span>
                 {% endfor %}
               </div>
-              <span class="text-muted small flex-shrink-0">{{ thread.last_reply_at }}</span>
+              <span class="text-muted small flex-shrink-0" data-local-time="{{ thread.last_reply_at }}">{{ thread.last_reply_at }}</span>
             </div>
 
             <div class="mb-2">
@@ -96,7 +96,7 @@
 
             <div class="d-flex align-items-center gap-3 flex-wrap">
               <span class="small text-muted"><i class="bi bi-person me-1"></i>{{ thread.author }}</span>
-              <span class="small text-muted"><i class="bi bi-clock me-1"></i>{{ thread.created_at }}</span>
+              <span class="small text-muted"><i class="bi bi-clock me-1"></i><span data-local-time="{{ thread.created_at }}">{{ thread.created_at }}</span></span>
               <span class="small text-muted">
                 <i class="bi bi-chat-left-text me-1"></i>
                 {% if thread.reply_count == 1 %}1 reply{% else %}{{ thread.reply_count }} replies{% endif %}
@@ -253,5 +253,17 @@
   courseFilter?.addEventListener('change', applyFilters);
   sortFilter?.addEventListener('change', applyFilters);
   searchInput?.addEventListener('input', applyFilters);
+
+  document.querySelectorAll('[data-local-time]').forEach((element) => {
+    const value = element.dataset.localTime;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      element.textContent = date.toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      });
+      element.title = value;
+    }
+  });
 </script>
 {% endblock %}
