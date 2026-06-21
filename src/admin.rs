@@ -30,6 +30,23 @@ pub struct AdminUserListItem {
     pub must_change_password: bool,
     pub created_at_iso: String,
     pub created_at: String,
+    pub age: Option<i32>,
+    pub programme: Option<String>,
+    pub year_of_study: Option<i32>,
+    pub staff_no: Option<String>,
+    pub department: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct AdminUpdateUserForm {
+    pub display_name: String,
+    pub email: String,
+    pub role: String,
+    pub age: Option<String>,
+    pub programme: Option<String>,
+    pub year_of_study: Option<String>,
+    pub staff_no: Option<String>,
+    pub department: Option<String>,
 }
 
 fn set_admin_user_page_base(ctx: &mut Context, user: &crate::auth::CurrentUser) {
@@ -52,26 +69,6 @@ fn set_admin_user_form_defaults(ctx: &mut Context) {
     ctx.insert("form_department", "");
 }
 
-fn set_admin_user_form_values(ctx: &mut Context, form: &AdminCreateUserForm) {
-    ctx.insert("form_display_name", form.display_name.trim());
-    ctx.insert("form_email", form.email.trim());
-    ctx.insert("form_role", form.role.trim());
-    ctx.insert("form_age", form.age.as_deref().unwrap_or("").trim());
-    ctx.insert(
-        "form_programme",
-        form.programme.as_deref().unwrap_or("").trim(),
-    );
-    ctx.insert(
-        "form_year_of_study",
-        form.year_of_study.as_deref().unwrap_or("").trim(),
-    );
-    ctx.insert("form_staff_no", form.staff_no.as_deref().unwrap_or("").trim());
-    ctx.insert(
-        "form_department",
-        form.department.as_deref().unwrap_or("").trim(),
-    );
-}
-
 pub async fn admin_users_page(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
@@ -88,12 +85,19 @@ pub async fn admin_users_page(
     ctx.insert("form_action", "/admin/users/create");
 
     let users = sqlx::query_as::<_, AdminUserListItem>(
-        r#"SELECT id, display_name, email, role, is_active
-         , must_change_password
-         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
-         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
-         FROM users
-         ORDER BY created_at DESC, id DESC
+        r#"SELECT u.id, u.display_name, u.email, u.role, u.is_active
+         , u.must_change_password
+         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
+         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         , s.age
+         , s.programme
+         , s.year_of_study
+         , l.staff_no
+         , l.department
+         FROM users u
+         LEFT JOIN students s ON s.user_id = u.id
+         LEFT JOIN lecturers l ON l.user_id = u.id
+         ORDER BY u.created_at DESC, u.id DESC
          LIMIT 200"#,
     )
     .fetch_all(db.get_ref())
@@ -126,6 +130,10 @@ pub async fn admin_users_page(
         ctx.insert("create_success", &msg);
         let _ = session.remove("create_success");
     }
+    if let Ok(Some(msg)) = session.get::<String>("create_error") {
+        ctx.insert("create_error", &msg);
+        let _ = session.remove("create_error");
+    }
     if let Ok(Some(tmp)) = session.get::<String>("temp_password") {
         ctx.insert("temp_password", &tmp);
         let _ = session.remove("temp_password");
@@ -147,12 +155,12 @@ pub async fn admin_users_page(
 }
 
 pub async fn admin_create_user(
-    tmpl: web::Data<Tera>,
+    _tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
     session: Session,
     form: web::Form<AdminCreateUserForm>,
 ) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -161,11 +169,6 @@ pub async fn admin_create_user(
     let role = form.role.trim().to_lowercase();
     let display_name = form.display_name.trim();
     let email = form.email.trim().to_lowercase();
-
-    let mut ctx = Context::new();
-    set_admin_user_page_base(&mut ctx, &user);
-    set_admin_user_form_values(&mut ctx, &form);
-    ctx.insert("form_action", "/admin/users/create");
 
     let mut validation_error: Option<String> = None;
     if display_name.is_empty() || email.is_empty() {
@@ -214,13 +217,10 @@ pub async fn admin_create_user(
     }
 
     if let Some(message) = validation_error {
-        ctx.insert("create_error", &message);
-        ctx.insert("users", &Vec::<AdminUserListItem>::new());
-        let rendered = match tmpl.render("admin/user_management.html", &ctx) {
-            Ok(html) => html,
-            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-        };
-        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+        let _ = session.insert("create_error", &message);
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
     }
     
     // Always generate a temporary password (admin does not supply it)
@@ -231,13 +231,10 @@ pub async fn admin_create_user(
     let password_hash = match crate::hash_password(&password_to_hash) {
         Ok(hash) => hash,
         Err(error) => {
-            ctx.insert("create_error", &error);
-            ctx.insert("users", &Vec::<AdminUserListItem>::new());
-            let rendered = match tmpl.render("admin/user_management.html", &ctx) {
-                Ok(html) => html,
-                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-            };
-            return HttpResponse::InternalServerError().content_type("text/html").body(rendered);
+            let _ = session.insert("create_error", &error);
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
         }
     };
 
@@ -269,13 +266,10 @@ pub async fn admin_create_user(
         Ok(id) => id,
         Err(error) => {
             let _ = tx.rollback().await;
-            ctx.insert("create_error", &format!("Failed to create user account: {error}"));
-                ctx.insert("users", &Vec::<AdminUserListItem>::new());
-            let rendered = match tmpl.render("admin/user_management.html", &ctx) {
-                Ok(html) => html,
-                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-            };
-            return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+            let _ = session.insert("create_error", &format!("Failed to create user account: {error}"));
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
         }
     };
 
@@ -304,34 +298,19 @@ pub async fn admin_create_user(
 
     if let Err(error) = profile_result {
         let _ = tx.rollback().await;
-        ctx.insert(
+        let _ = session.insert(
             "create_error",
             &format!("Failed to create {} profile: {error}", role),
         );
-        ctx.insert("users", &Vec::<AdminUserListItem>::new());
-        let rendered = match tmpl.render("admin/user_management.html", &ctx) {
-            Ok(html) => html,
-            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-        };
-        return HttpResponse::BadRequest().content_type("text/html").body(rendered);
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
     }
 
     if let Err(error) = tx.commit().await {
         return HttpResponse::InternalServerError()
             .body(format!("Failed to commit DB transaction: {error}"));
     }
-
-    let _users = sqlx::query_as::<_, AdminUserListItem>(
-        r#"SELECT id, display_name, email, role, is_active, must_change_password,
-         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso,
-         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
-         FROM users
-         ORDER BY created_at DESC, id DESC
-         LIMIT 200"#,
-    )
-    .fetch_all(db.get_ref())
-    .await
-    .unwrap_or_default();
 
     // Use Post-Redirect-Get: store one-time success/temp password in session, then redirect.
     if let Some(tmp) = temp_password {
@@ -373,12 +352,19 @@ pub async fn admin_toggle_user_active(
     }
 
     let user = sqlx::query_as::<_, AdminUserListItem>(
-        r#"SELECT id, display_name, email, role, is_active
-         , must_change_password
-         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
-         , to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
-         FROM users
-         WHERE id = $1"#,
+        r#"SELECT u.id, u.display_name, u.email, u.role, u.is_active
+         , u.must_change_password
+         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
+         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         , s.age
+         , s.programme
+         , s.year_of_study
+         , l.staff_no
+         , l.department
+         FROM users u
+         LEFT JOIN students s ON s.user_id = u.id
+         LEFT JOIN lecturers l ON l.user_id = u.id
+         WHERE u.id = $1"#,
     )
     .bind(user_id)
     .fetch_optional(db.get_ref())
@@ -412,6 +398,265 @@ pub async fn admin_toggle_user_active(
     let action = if new_status { "activated" } else { "deactivated" };
     let message = format!("{} has been {action}.", user.display_name);
     let _ = session.insert("user_status_success", &message);
+
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+        .finish()
+}
+
+pub async fn admin_update_user(
+    db: web::Data<PgPool>,
+    session: Session,
+    user_id: web::Path<i32>,
+    form: web::Form<AdminUpdateUserForm>,
+) -> impl Responder {
+    let current_user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let user_id = user_id.into_inner();
+    let form = form.into_inner();
+    let role = form.role.trim().to_lowercase();
+    let display_name = form.display_name.trim();
+    let email = form.email.trim().to_lowercase();
+
+    let mut validation_error: Option<String> = None;
+    if display_name.is_empty() || email.is_empty() {
+        validation_error = Some("Display name and email are required.".to_string());
+    } else if role != "student" && role != "lecturer" && role != "admin" {
+        validation_error = Some("Role must be student, lecturer, or admin.".to_string());
+    } else if user_id == current_user.id && role != "admin" {
+        validation_error = Some("You cannot remove your own admin role.".to_string());
+    }
+
+    let age = match crate::parse_optional_i32(form.age.as_deref(), "Age") {
+        Ok(value) => value,
+        Err(message) => {
+            validation_error = Some(message);
+            None
+        }
+    };
+    let year_of_study = match crate::parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
+        Ok(value) => value,
+        Err(message) => {
+            validation_error = Some(message);
+            None
+        }
+    };
+
+    if validation_error.is_none() {
+        if let Some(year) = year_of_study {
+            if !(1..=4).contains(&year) {
+                validation_error = Some("Year of study must be 1, 2, 3, or 4.".to_string());
+            }
+        }
+    }
+
+    if validation_error.is_none() && role == "student" {
+        if form.programme.as_deref().unwrap_or("").trim().is_empty() {
+            validation_error = Some("Programme is required for students.".to_string());
+        } else if year_of_study.is_none() {
+            validation_error = Some("Year of study is required for students.".to_string());
+        }
+    }
+
+    if validation_error.is_none() && role == "lecturer" {
+        if form.staff_no.as_deref().unwrap_or("").trim().is_empty()
+            || form.department.as_deref().unwrap_or("").trim().is_empty()
+        {
+            validation_error = Some("Staff number and department are required for lecturers.".to_string());
+        }
+    }
+
+    if let Some(message) = validation_error {
+        let _ = session.insert("user_status_error", &message);
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
+    }
+
+    let mut tx = match db.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to start DB transaction: {error}"));
+        }
+    };
+
+    let update_result = sqlx::query(
+        "UPDATE users
+         SET display_name = $1, email = $2, role = $3, updated_at = NOW()
+         WHERE id = $4",
+    )
+    .bind(display_name)
+    .bind(&email)
+    .bind(&role)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await;
+
+    let rows_affected = match update_result {
+        Ok(result) => result.rows_affected(),
+        Err(error) => {
+            let _ = tx.rollback().await;
+            let _ = session.insert("user_status_error", &format!("Failed to update user account: {error}"));
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
+        }
+    };
+
+    if rows_affected == 0 {
+        let _ = tx.rollback().await;
+        let _ = session.insert("user_status_error", "User account not found.");
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
+    }
+
+    let profile_result = if role == "student" {
+        let delete_lecturer = sqlx::query("DELETE FROM lecturers WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await;
+
+        match delete_lecturer {
+            Ok(_) => {
+                sqlx::query(
+                    "INSERT INTO students (user_id, age, programme, year_of_study)
+                     VALUES ($1, $2, $3, $4)
+                     ON CONFLICT (user_id) DO UPDATE
+                     SET age = EXCLUDED.age,
+                         programme = EXCLUDED.programme,
+                         year_of_study = EXCLUDED.year_of_study",
+                )
+                .bind(user_id)
+                .bind(age)
+                .bind(form.programme.as_deref().map(str::trim).filter(|v| !v.is_empty()))
+                .bind(year_of_study)
+                .execute(&mut *tx)
+                .await
+                .map(|_| ())
+            }
+            Err(error) => Err(error),
+        }
+    } else if role == "lecturer" {
+        let delete_student = sqlx::query("DELETE FROM students WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await;
+
+        match delete_student {
+            Ok(_) => {
+                sqlx::query(
+                    "INSERT INTO lecturers (user_id, staff_no, department)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (user_id) DO UPDATE
+                     SET staff_no = EXCLUDED.staff_no,
+                         department = EXCLUDED.department",
+                )
+                .bind(user_id)
+                .bind(form.staff_no.as_deref().unwrap_or("").trim())
+                .bind(form.department.as_deref().unwrap_or("").trim())
+                .execute(&mut *tx)
+                .await
+                .map(|_| ())
+            }
+            Err(error) => Err(error),
+        }
+    } else {
+        match sqlx::query("DELETE FROM students WHERE user_id = $1")
+            .bind(user_id)
+            .execute(&mut *tx)
+            .await
+        {
+            Ok(_) => sqlx::query("DELETE FROM lecturers WHERE user_id = $1")
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await
+                .map(|_| ()),
+            Err(error) => Err(error),
+        }
+    };
+
+    if let Err(error) = profile_result {
+        let _ = tx.rollback().await;
+        let _ = session.insert("user_status_error", &format!("Failed to update user profile: {error}"));
+        return HttpResponse::SeeOther()
+            .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+            .finish();
+    }
+
+    if let Err(error) = tx.commit().await {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to commit DB transaction: {error}"));
+    }
+
+    let _ = session.insert("user_status_success", &format!("{display_name} has been updated."));
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+        .finish()
+}
+
+pub async fn admin_reset_user_password(
+    db: web::Data<PgPool>,
+    session: Session,
+    user_id: web::Path<i32>,
+) -> impl Responder {
+    match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(_) => {}
+        Err(response) => return response,
+    }
+
+    let user_id = user_id.into_inner();
+    let display_name = match sqlx::query_scalar::<_, String>(
+        "SELECT display_name FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(name)) => name,
+        Ok(None) => {
+            let _ = session.insert("user_status_error", "User account not found.");
+            return HttpResponse::SeeOther()
+                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                .finish();
+        }
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load user account: {error}"));
+        }
+    };
+
+    let temp_password = crate::generate_temp_password(12);
+    let password_hash = match crate::hash_password(&temp_password) {
+        Ok(hash) => hash,
+        Err(error) => {
+            return HttpResponse::InternalServerError().body(error);
+        }
+    };
+
+    if let Err(error) = sqlx::query(
+        "UPDATE users
+         SET password_hash = $1, must_change_password = TRUE, updated_at = NOW()
+         WHERE id = $2",
+    )
+    .bind(&password_hash)
+    .bind(user_id)
+    .execute(db.get_ref())
+    .await
+    {
+        return HttpResponse::InternalServerError()
+            .body(format!("Failed to reset password: {error}"));
+    }
+
+    let _ = session.insert(
+        "user_status_success",
+        &format!("Password reset for {display_name}."),
+    );
+    let _ = session.insert("temp_password", &temp_password);
 
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
@@ -560,6 +805,21 @@ async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error>
         .await
 }
 
+#[derive(Serialize, FromRow)]
+struct DashboardContentPreview {
+    author: String,
+    kind: String,
+    title: String,
+    snippet: String,
+    when: String,
+}
+
+#[derive(FromRow)]
+struct DashboardEnrollmentPoint {
+    label: String,
+    value: i64,
+}
+
 pub async fn admin_dashboard(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
@@ -625,6 +885,45 @@ pub async fn admin_dashboard(
     ctx.insert("admins_count", &admins_count);
     ctx.insert("courses_count", &courses_count);
     ctx.insert("enrollments_count", &enrollments_count);
+
+    let enrollment_points = match sqlx::query_as::<_, DashboardEnrollmentPoint>(
+        r#"WITH months AS (
+             SELECT generate_series(
+                 date_trunc('month', NOW()) - interval '5 months',
+                 date_trunc('month', NOW()),
+                 interval '1 month'
+             ) AS month_start
+         )
+         SELECT
+             to_char(months.month_start, 'Mon YYYY') AS label,
+             COUNT(e.id)::BIGINT AS value
+         FROM months
+         LEFT JOIN enrollments e
+             ON date_trunc('month', e.enrolled_at) = months.month_start
+         GROUP BY months.month_start
+         ORDER BY months.month_start"#,
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(points) => points,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load enrollment chart data: {error}"));
+        }
+    };
+
+    let enrollment_chart_labels: Vec<String> =
+        enrollment_points.iter().map(|point| point.label.clone()).collect();
+    let enrollment_chart_values: Vec<i64> =
+        enrollment_points.iter().map(|point| point.value).collect();
+    let enrollment_chart_labels_json = serde_json::to_string(&enrollment_chart_labels)
+        .unwrap_or_else(|_| "[]".to_string());
+    let enrollment_chart_values_json = serde_json::to_string(&enrollment_chart_values)
+        .unwrap_or_else(|_| "[]".to_string());
+    ctx.insert("enrollment_chart_labels_json", &enrollment_chart_labels_json);
+    ctx.insert("enrollment_chart_values_json", &enrollment_chart_values_json);
+
     // Recent activity placeholder list (hardcoded sample events)
     #[derive(Serialize)]
     struct Activity {
@@ -639,38 +938,55 @@ pub async fn admin_dashboard(
     ];
     ctx.insert("recent_activity", &recent_activity);
 
-    // Content preview cards (hardcoded for now; replace with DB query later)
-    #[derive(Serialize)]
-    struct ContentPreview {
-        author: String,
-        kind: String,
-        title: String,
-        snippet: String,
-        when: String,
-    }
-    let content_previews: Vec<ContentPreview> = vec![
-        ContentPreview {
-            author: "Dr. Tan Wei Ming".into(),
-            kind: "Announcement".into(),
-            title: "Assignment 2 brief released".into(),
-            snippet: "The brief for Assignment 2 is now available. Students should review the submission requirements and deadline.".into(),
-            when: "24 May 2026".into(),
-        },
-        ContentPreview {
-            author: "Aisha Rahman".into(),
-            kind: "Forum Post".into(),
-            title: "Questions about lab setup".into(),
-            snippet: "Has anyone managed to configure the local environment on Windows without Docker issues?".into(),
-            when: "23 May 2026".into(),
-        },
-        ContentPreview {
-            author: "Mr. Lim".into(),
-            kind: "Uploaded Material".into(),
-            title: "Week 8 lecture slides".into(),
-            snippet: "Slides for the upcoming lecture have been uploaded and include examples for the revision session.".into(),
-            when: "22 May 2026".into(),
-        },
-    ];
+    let content_previews = match sqlx::query_as::<_, DashboardContentPreview>(
+        r#"SELECT author, kind, title, snippet, when_label AS "when"
+         FROM (
+             SELECT
+                 COALESCE(u.display_name, 'Unknown') AS author,
+                 'Announcement' AS kind,
+                 a.title AS title,
+                 LEFT(a.content, 180) AS snippet,
+                 to_char(a.created_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 a.created_at AS sort_at
+             FROM announcements a
+             LEFT JOIN users u ON u.id = a.posted_by
+
+             UNION ALL
+
+             SELECT
+                 COALESCE(u.display_name, 'Unknown') AS author,
+                 'Forum Post' AS kind,
+                 ft.title AS title,
+                 LEFT(ft.body, 180) AS snippet,
+                 to_char(ft.created_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 ft.created_at AS sort_at
+             FROM forum_threads ft
+             LEFT JOIN users u ON u.id = ft.created_by
+
+             UNION ALL
+
+             SELECT
+                 COALESCE(u.display_name, 'Unknown') AS author,
+                 'Uploaded Material' AS kind,
+                 cm.title AS title,
+                 LEFT(COALESCE(cm.description, cm.material_type, 'Course material uploaded.'), 180) AS snippet,
+                 to_char(cm.uploaded_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 cm.uploaded_at AS sort_at
+             FROM course_materials cm
+             LEFT JOIN users u ON u.id = cm.uploaded_by
+         ) content_items
+         ORDER BY sort_at DESC
+         LIMIT 5"#,
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(previews) => previews,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load content previews: {error}"));
+        }
+    };
     ctx.insert("content_previews", &content_previews);
 
     let rendered = match tmpl.render("admin/dashboard.html", &ctx) {

@@ -162,7 +162,12 @@
       </div>
       {% endif %}
       {% if user_status_success is defined and user_status_success != "" %}
-      <div class="alert alert-success mb-0" role="alert">{{ user_status_success }}</div>
+      <div class="alert alert-success mb-0 d-flex justify-content-between align-items-center flex-wrap gap-2" role="alert">
+        <div>{{ user_status_success }}</div>
+        {% if temp_password is defined and temp_password != "" %}
+        <div><strong>Temp password:</strong> <code class="small">{{ temp_password }}</code></div>
+        {% endif %}
+      </div>
       {% endif %}
       {% if user_status_error is defined and user_status_error != "" %}
       <div class="alert alert-danger mb-0" role="alert">{{ user_status_error }}</div>
@@ -283,7 +288,18 @@
       </thead>
       <tbody id="userTableBody">
         {% for u in users %}
-        <tr class="user-row" data-name="{{ u.display_name | lower }}" data-email="{{ u.email | lower }}" data-role="{{ u.role }}" data-status="{% if u.is_active %}active{% else %}inactive{% endif %}">
+        <tr class="user-row"
+            data-id="{{ u.id }}"
+            data-display-name='{{ u.display_name }}'
+            data-email='{{ u.email }}'
+            data-name="{{ u.display_name | lower }}"
+            data-role="{{ u.role }}"
+            data-status="{% if u.is_active %}active{% else %}inactive{% endif %}"
+            data-age='{{ u.age | default(value="") }}'
+            data-programme='{{ u.programme | default(value="") }}'
+            data-year-of-study='{{ u.year_of_study | default(value="") }}'
+            data-staff-no='{{ u.staff_no | default(value="") }}'
+            data-department='{{ u.department | default(value="") }}'>
           <td>
             <div class="user-primary-text">{{ u.display_name }}</div>
             <div class="user-secondary-text">{{ u.email }}</div>
@@ -327,12 +343,14 @@
                 </button>
                 {% endif %}
               </form>
-              <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm">
+              <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm" onclick="openUpdateModal(this.closest('.user-row'))">
                 <i data-lucide="pencil" width="13" height="13"></i> Update
               </button>
-              <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm">
-                <i data-lucide="key-round" width="13" height="13"></i> Reset
-              </button>
+              <form method="post" action="/admin/users/{{ u.id }}/reset-password" data-user-name="{{ u.display_name }}" onsubmit="return confirmResetPassword(this.dataset.userName)">
+                <button type="submit" class="btn-lms btn-lms-secondary btn-lms-sm">
+                  <i data-lucide="key-round" width="13" height="13"></i> Reset
+                </button>
+              </form>
             </div>
           </td>
         </tr>
@@ -347,6 +365,98 @@
         {% endif %}
       </tbody>
     </table>
+  </div>
+</div>
+
+<div class="lms-modal-overlay" id="updateUserModal" role="dialog" aria-modal="true" aria-labelledby="updateUserModalTitle" onclick="handleUpdateOverlayClick(event)">
+  <div class="lms-modal">
+    <form method="post" id="updateUserForm">
+      <div class="lms-modal-header">
+        <h3 id="updateUserModalTitle">Update User</h3>
+        <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeUpdateModal()" aria-label="Close">
+          <i data-lucide="x" width="18" height="18"></i>
+        </button>
+      </div>
+      <div class="lms-modal-body">
+        <div class="lms-form-row">
+          <div class="lms-form-group">
+            <label for="update_display_name" class="lms-form-label">Display Name</label>
+            <input type="text" class="lms-form-input" id="update_display_name" name="display_name" required>
+          </div>
+          <div class="lms-form-group">
+            <label for="update_email" class="lms-form-label">Email</label>
+            <input type="email" class="lms-form-input" id="update_email" name="email" required>
+          </div>
+        </div>
+        <div class="lms-form-group">
+          <label for="update_role" class="lms-form-label">Role</label>
+          <select class="lms-form-select" id="update_role" name="role" required>
+            <option value="student">Student</option>
+            <option value="lecturer">Lecturer</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+
+        <div id="updateStudentFields" class="user-profile-panel" style="margin-top:0">
+          <h6>Student Profile</h6>
+          <div class="lms-form-row">
+            <div class="lms-form-group">
+              <label for="update_age" class="lms-form-label">Age</label>
+              <input type="number" class="lms-form-input" id="update_age" name="age" min="1" placeholder="Optional">
+            </div>
+            <div class="lms-form-group">
+              <label for="update_year_of_study" class="lms-form-label">Year of Study</label>
+              <select class="lms-form-select" id="update_year_of_study" name="year_of_study">
+                <option value="">Select year</option>
+                <option value="1">Year 1</option>
+                <option value="2">Year 2</option>
+                <option value="3">Year 3</option>
+                <option value="4">Year 4</option>
+              </select>
+            </div>
+          </div>
+          <div class="lms-form-group" style="margin-top:var(--space-4)">
+            <label for="update_programme" class="lms-form-label">Programme</label>
+            <select class="lms-form-select" id="update_programme" name="programme">
+              <option value="">Select programme</option>
+              <option value="Computer Science">Computer Science</option>
+              <option value="Software Engineering">Software Engineering</option>
+              <option value="Information Systems">Information Systems</option>
+              <option value="Data Science">Data Science</option>
+              <option value="Cybersecurity">Cybersecurity</option>
+              <option value="Business Analytics">Business Analytics</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="updateLecturerFields" class="user-profile-panel" style="margin-top:0">
+          <h6>Lecturer Profile</h6>
+          <div class="lms-form-row">
+            <div class="lms-form-group">
+              <label for="update_staff_no" class="lms-form-label">Staff Number</label>
+              <input type="text" class="lms-form-input" id="update_staff_no" name="staff_no" placeholder="e.g. ST-001">
+            </div>
+            <div class="lms-form-group">
+              <label for="update_department" class="lms-form-label">Department</label>
+              <select class="lms-form-select" id="update_department" name="department">
+                <option value="">Select department</option>
+                <option value="School of Computing">School of Computing</option>
+                <option value="Department of Information Technology">Department of Information Technology</option>
+                <option value="Department of Software Engineering">Department of Software Engineering</option>
+                <option value="Department of Data Science">Department of Data Science</option>
+                <option value="Department of Cybersecurity">Department of Cybersecurity</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="lms-modal-footer">
+        <button type="button" class="btn-lms btn-lms-secondary" onclick="closeUpdateModal()">Cancel</button>
+        <button type="submit" class="btn-lms btn-lms-primary">
+          <i data-lucide="save" width="15" height="15"></i> Save Changes
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -403,11 +513,70 @@
     const status = document.getElementById('statusFilter').value;
 
     document.querySelectorAll('.user-row').forEach(row => {
-      const matchSearch = row.dataset.name.includes(search) || row.dataset.email.includes(search);
+      const matchSearch = row.dataset.name.includes(search) || row.dataset.email.toLowerCase().includes(search);
       const matchRole = !role || row.dataset.role === role;
       const matchStatus = !status || row.dataset.status === status;
       row.style.display = matchSearch && matchRole && matchStatus ? '' : 'none';
     });
   }
+
+  function confirmResetPassword(userName) {
+    return window.confirm(
+      'Reset password for ' + userName + '? A new temporary password will be generated and the user must change it after logging in.'
+    );
+  }
+
+  const updateRole = document.getElementById('update_role');
+  const updateStudentFields = document.getElementById('updateStudentFields');
+  const updateLecturerFields = document.getElementById('updateLecturerFields');
+  const updateProgramme = document.getElementById('update_programme');
+  const updateYearOfStudy = document.getElementById('update_year_of_study');
+  const updateStaffNo = document.getElementById('update_staff_no');
+  const updateDepartment = document.getElementById('update_department');
+
+  function syncUpdateRoleFields() {
+    const role = updateRole?.value || 'student';
+    updateStudentFields.style.display = role === 'student' ? '' : 'none';
+    updateLecturerFields.style.display = role === 'lecturer' ? '' : 'none';
+
+    updateProgramme.required = role === 'student';
+    updateYearOfStudy.required = role === 'student';
+    updateStaffNo.required = role === 'lecturer';
+    updateDepartment.required = role === 'lecturer';
+  }
+
+  function openUpdateModal(row) {
+    if (!row) return;
+
+    const form = document.getElementById('updateUserForm');
+    form.action = '/admin/users/' + row.dataset.id + '/update';
+    document.getElementById('updateUserModalTitle').textContent = 'Update ' + row.dataset.displayName;
+    document.getElementById('update_display_name').value = row.dataset.displayName || '';
+    document.getElementById('update_email').value = row.dataset.email || '';
+    updateRole.value = row.dataset.role || 'student';
+    document.getElementById('update_age').value = row.dataset.age || '';
+    updateProgramme.value = row.dataset.programme || '';
+    updateYearOfStudy.value = row.dataset.yearOfStudy || '';
+    updateStaffNo.value = row.dataset.staffNo || '';
+    updateDepartment.value = row.dataset.department || '';
+
+    syncUpdateRoleFields();
+    document.getElementById('updateUserModal').classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeUpdateModal() {
+    document.getElementById('updateUserModal').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  function handleUpdateOverlayClick(event) {
+    if (event.target === document.getElementById('updateUserModal')) {
+      closeUpdateModal();
+    }
+  }
+
+  updateRole?.addEventListener('change', syncUpdateRoleFields);
+  syncUpdateRoleFields();
 </script>
 {% endblock %}

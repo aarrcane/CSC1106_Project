@@ -687,6 +687,14 @@ async fn main() -> std::io::Result<()> {
                 "/admin/users/{id}/toggle-active",
                 web::post().to(admin::admin_toggle_user_active),
             )
+            .route(
+                "/admin/users/{id}/update",
+                web::post().to(admin::admin_update_user),
+            )
+            .route(
+                "/admin/users/{id}/reset-password",
+                web::post().to(admin::admin_reset_user_password),
+            )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
             .route("/admin/settings", web::get().to(admin::admin_settings_page))
             .route("/admin/audit", web::get().to(admin::admin_audit_page))
