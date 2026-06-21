@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS notifications (
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title VARCHAR(200) NOT NULL,
     message TEXT NOT NULL,
+    link_url VARCHAR(500),
     is_read BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -144,10 +145,17 @@ CREATE TABLE IF NOT EXISTS forum_threads (
     title VARCHAR(255) NOT NULL,
     body TEXT NOT NULL,
     tags VARCHAR(255),
+    thread_type VARCHAR(20) NOT NULL DEFAULT 'discussion' CHECK (thread_type IN ('discussion', 'announcement')),
     is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
     is_answered BOOLEAN NOT NULL DEFAULT FALSE,
     view_count INT NOT NULL DEFAULT 0,
     reply_count INT NOT NULL DEFAULT 0,
+    locked_at TIMESTAMPTZ,
+    locked_by INT REFERENCES users(id) ON DELETE SET NULL,
+    edited_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    deleted_by INT REFERENCES users(id) ON DELETE SET NULL,
+    delete_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -156,9 +164,44 @@ CREATE TABLE IF NOT EXISTS forum_posts (
     id SERIAL PRIMARY KEY,
     thread_id INT NOT NULL REFERENCES forum_threads(id) ON DELETE CASCADE,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    parent_post_id INT REFERENCES forum_posts(id) ON DELETE SET NULL,
     body TEXT NOT NULL,
+    edited_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
+    deleted_by INT REFERENCES users(id) ON DELETE SET NULL,
+    delete_reason TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS forum_moderation_actions (
+    id SERIAL PRIMARY KEY,
+    moderator_user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    action VARCHAR(40) NOT NULL CHECK (action IN ('delete', 'pin', 'unpin', 'answered', 'unanswered', 'lock', 'unlock')),
+    target_type VARCHAR(20) NOT NULL CHECK (target_type IN ('thread', 'post', 'attachment')),
+    target_id INT NOT NULL,
+    thread_id INT REFERENCES forum_threads(id) ON DELETE CASCADE,
+    reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS forum_attachments (
+    id SERIAL PRIMARY KEY,
+    thread_id INT REFERENCES forum_threads(id) ON DELETE CASCADE,
+    post_id INT REFERENCES forum_posts(id) ON DELETE CASCADE,
+    uploaded_by INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    object_path VARCHAR(500) UNIQUE NOT NULL,
+    original_filename VARCHAR(255) NOT NULL,
+    content_type VARCHAR(50) NOT NULL CHECK (content_type IN ('image/jpeg', 'image/png')),
+    file_size INT NOT NULL CHECK (file_size > 0 AND file_size <= 5242880),
+    deleted_at TIMESTAMPTZ,
+    deleted_by INT REFERENCES users(id) ON DELETE SET NULL,
+    delete_reason TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (
+        (thread_id IS NOT NULL AND post_id IS NULL)
+        OR (thread_id IS NULL AND post_id IS NOT NULL)
+    )
 );
 
 CREATE TABLE IF NOT EXISTS quiz_monitoring_events (

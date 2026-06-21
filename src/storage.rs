@@ -25,8 +25,8 @@ impl SupabaseStorage {
 
         Self {
             client: reqwest::Client::new(),
-            base_url,
-            bucket,
+            base_url: normalize_base_url(&base_url),
+            bucket: bucket.trim_matches('/').to_string(),
             service_role_key,
         }
     }
@@ -46,6 +46,7 @@ impl SupabaseStorage {
         let res = self
             .client
             .post(&url)
+            .header("apikey", &self.service_role_key)
             .header("Authorization", format!("Bearer {}", self.service_role_key))
             .header("Content-Type", content_type)
             .header("x-upsert", "true") // overwrite if same name
@@ -72,6 +73,7 @@ impl SupabaseStorage {
         let res = self
             .client
             .delete(&url)
+            .header("apikey", &self.service_role_key)
             .header("Authorization", format!("Bearer {}", self.service_role_key))
             .send()
             .await
@@ -92,4 +94,13 @@ impl SupabaseStorage {
             self.base_url, self.bucket, object_path
         )
     }
+}
+
+fn normalize_base_url(value: &str) -> String {
+    value
+        .trim()
+        .trim_end_matches('/')
+        .trim_end_matches("/rest/v1")
+        .trim_end_matches('/')
+        .to_string()
 }
