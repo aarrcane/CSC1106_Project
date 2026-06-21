@@ -1104,6 +1104,8 @@ async fn render_forum_list(tmpl: &Tera, db: &PgPool, audience: ForumAudience<'_>
             ctx.insert("student_name", display_name);
         }
         ForumAudience::Lecturer { display_name, .. } => {
+            ctx.insert("student_name", display_name);
+            ctx.insert("student_id", "");
             ctx.insert("lecturer_name", display_name);
             ctx.insert("is_lecturer", &true);
         }
@@ -1167,6 +1169,8 @@ async fn render_thread_detail(
             ctx.insert("student_name", display_name);
         }
         ForumAudience::Lecturer { display_name, .. } => {
+            ctx.insert("student_name", display_name);
+            ctx.insert("student_id", "");
             ctx.insert("lecturer_name", display_name);
             ctx.insert("is_lecturer", &true);
         }
