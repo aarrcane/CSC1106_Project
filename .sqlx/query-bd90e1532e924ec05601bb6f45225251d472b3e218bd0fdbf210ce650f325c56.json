@@ -1,0 +1,80 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            c.id,\n            c.course_code                       AS code,\n            c.course_name                       AS name,\n            COALESCE(c.description, '')         AS \"description!\",\n            COALESCE(c.status, 'Ongoing')       AS \"status!\",\n            COALESCE(c.trimester, '')           AS \"trimester!\",\n            COUNT(a.id)                         AS \"assignment_count!\"\n           FROM enrollments e\n           JOIN courses c ON c.id = e.course_id\n           JOIN assignments a ON a.course_id = c.id\n           WHERE e.student_id = $1\n           GROUP BY c.id, c.course_code, c.course_name, c.description, c.status, c.trimester\n           ORDER BY c.course_code",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "course_code"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "course_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "status!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "trimester!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "assignment_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "bd90e1532e924ec05601bb6f45225251d472b3e218bd0fdbf210ce650f325c56"
+}

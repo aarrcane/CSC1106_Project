@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n            c.id,\n            c.course_code   AS code,\n            c.course_name   AS name,\n            COALESCE(c.status, 'Preparing')     AS \"status!\",\n            COALESCE(c.trimester, '')            AS \"trimester!\",\n            COALESCE(u.display_name, 'Unassigned') AS \"lecturer_name!\"\n           FROM courses c\n           LEFT JOIN lecturers l ON l.id = c.lecturer_id\n           LEFT JOIN users u     ON u.id = l.user_id\n           ORDER BY c.created_at DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "code",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "course_code"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "courses",
+            "name": "course_name"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "status!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "trimester!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "lecturer_name!",
+        "type_info": "Varchar",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "2775dc107b9e78a38f6a4324b4a366fa1ab352c8a485df597cb36a3d6dee7d61"
+}

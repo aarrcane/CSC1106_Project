@@ -1,0 +1,90 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.week_number, a.title,\n                  COALESCE(a.description, '') AS \"description!\",\n                  a.due_date, a.max_score,\n                  COUNT(af.id) AS file_count\n           FROM assignments a\n           LEFT JOIN assignment_files af ON af.assignment_id = a.id\n           WHERE a.course_id = $1\n           GROUP BY a.id\n           ORDER BY a.week_number NULLS LAST, a.due_date",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "week_number",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "week_number"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "description!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "due_date",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "due_date"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "max_score",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "max_score"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "file_count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      false,
+      null,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "4216e0f537c02886c42cd74148a8544f971afea34de09489f5a5ef5faa0fe48d"
+}

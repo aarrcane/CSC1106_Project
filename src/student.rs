@@ -188,111 +188,194 @@ pub async fn student_courses(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn student_assignments(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+// ── ASSIGNMENTS ───────────────────────────────────────────────────────────────
+
+pub async fn student_assignments(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
+        Ok(u) => u,
+        Err(r) => return r,
     };
 
+    let student = match sqlx::query!("SELECT id FROM students WHERE user_id = $1", user.id)
+        .fetch_optional(db.get_ref())
+        .await
+    {
+        Ok(Some(s)) => s,
+        Ok(None) => return HttpResponse::Forbidden().body("No student profile"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    #[derive(serde::Serialize)]
+    struct CourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        description: String,
+        status: String,
+        trimester: String,
+        assignment_count: i64,
+    }
+
+    let courses = match sqlx::query_as!(
+        CourseRow,
+        r#"SELECT
+            c.id,
+            c.course_code                       AS code,
+            c.course_name                       AS name,
+            COALESCE(c.description, '')         AS "description!",
+            COALESCE(c.status, 'Ongoing')       AS "status!",
+            COALESCE(c.trimester, '')           AS "trimester!",
+            COUNT(a.id)                         AS "assignment_count!"
+           FROM enrollments e
+           JOIN courses c ON c.id = e.course_id
+           JOIN assignments a ON a.course_id = c.id
+           WHERE e.student_id = $1
+           GROUP BY c.id, c.course_code, c.course_name, c.description, c.status, c.trimester
+           ORDER BY c.course_code"#,
+        student.id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let total_courses = courses.len();
+    let total_assignments: i64 = courses.iter().map(|c| c.assignment_count).sum();
+
     let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
+    crate::insert_student_base(&mut ctx, &user.display_name, "");
     ctx.insert("active_page", "assignments");
-
-    // TODO: replace with DB query for enrolled courses (used by filter dropdown)
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
     ctx.insert("courses", &courses);
-
-    // TODO: replace with DB query: SELECT * FROM assignments/quizzes WHERE student_id = ?
-    let assignments: Vec<crate::AssignmentContext> = vec![
-        crate::AssignmentContext {
-            id: 1,
-            title: "Assignment 1".into(),
-            course_code: "CSC1106".into(),
-            course_name: "Web Programming".into(),
-            item_type: "assignment".into(),
-            due_date: "15 May 2026".into(),
-            status: "graded".into(),
-            score: Some("82 / 100".into()),
-            urgent: false,
-        },
-        crate::AssignmentContext {
-            id: 2,
-            title: "Assignment 2".into(),
-            course_code: "CSC1106".into(),
-            course_name: "Web Programming".into(),
-            item_type: "assignment".into(),
-            due_date: "28 May 2026".into(),
-            status: "pending".into(),
-            score: None,
-            urgent: true,
-        },
-        crate::AssignmentContext {
-            id: 3,
-            title: "Quiz 3".into(),
-            course_code: "CSC1107".into(),
-            course_name: "Operating Systems".into(),
-            item_type: "quiz".into(),
-            due_date: "30 May 2026".into(),
-            status: "pending".into(),
-            score: None,
-            urgent: false,
-        },
-        crate::AssignmentContext {
-            id: 4,
-            title: "Lab Report 2".into(),
-            course_code: "INF2003".into(),
-            course_name: "Database Systems".into(),
-            item_type: "assignment".into(),
-            due_date: "10 May 2026".into(),
-            status: "submitted".into(),
-            score: None,
-            urgent: false,
-        },
-    ];
-    ctx.insert("assignments", &assignments);
+    ctx.insert("total_courses", &total_courses);
+    ctx.insert("total_assignments", &total_assignments);
 
     let rendered = match tmpl.render("student/assignments.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+// ── ASSIGNMENTS DATA (JSON) ───────────────────────────────────────────────────
+
+pub async fn student_assignments_data(
+    db: web::Data<PgPool>,
+    session: Session,
+    query: web::Query<std::collections::HashMap<String, String>>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Student) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let student = match sqlx::query!("SELECT id FROM students WHERE user_id = $1", user.id)
+        .fetch_optional(db.get_ref())
+        .await
+    {
+        Ok(Some(s)) => s,
+        _ => return HttpResponse::Forbidden().finish(),
+    };
+
+    let course_id: i32 = match query.get("course_id").and_then(|v| v.parse().ok()) {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Missing course_id"),
+    };
+
+    // Verify enrollment
+    let enrolled = sqlx::query!(
+        "SELECT 1 AS one FROM enrollments WHERE student_id = $1 AND course_id = $2",
+        student.id,
+        course_id
+    )
+    .fetch_optional(db.get_ref())
+    .await
+    .ok()
+    .flatten();
+
+    if enrolled.is_none() {
+        return HttpResponse::Forbidden().finish();
+    }
+
+    #[derive(serde::Serialize, sqlx::FromRow)]
+    struct AsgRow {
+        id: i32,
+        week_number: Option<i32>,
+        title: String,
+        description: String,
+        due_date: chrono::DateTime<chrono::Utc>,
+        max_score: i32,
+        file_count: Option<i64>,
+    }
+
+    #[derive(serde::Serialize, sqlx::FromRow)]
+    struct FileRow {
+        id: i32,
+        file_name: String,
+        file_path: String,
+    }
+
+    let assignments = match sqlx::query_as!(
+        AsgRow,
+        r#"SELECT a.id, a.week_number, a.title,
+                  COALESCE(a.description, '') AS "description!",
+                  a.due_date, a.max_score,
+                  COUNT(af.id) AS file_count
+           FROM assignments a
+           LEFT JOIN assignment_files af ON af.assignment_id = a.id
+           WHERE a.course_id = $1
+           GROUP BY a.id
+           ORDER BY a.week_number NULLS LAST, a.due_date"#,
+        course_id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let mut result = Vec::new();
+    for a in assignments {
+        let raw_files = sqlx::query_as!(
+            FileRow,
+            "SELECT id, file_name, file_path FROM assignment_files WHERE assignment_id = $1",
+            a.id
+        )
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default();
+
+        let files_with_url: Vec<serde_json::Value> = raw_files
+            .into_iter()
+            .map(|f| {
+                serde_json::json!({
+                    "id": f.id,
+                    "file_name": f.file_name,
+                    "file_url": storage.public_url(&f.file_path),  // ← storage, not storage_ref
+                })
+            })
+            .collect();
+
+        result.push(serde_json::json!({
+            "id": a.id,
+            "week_number": a.week_number,
+            "title": a.title,
+            "description": a.description,
+            "due_date": a.due_date,
+            "max_score": a.max_score,
+            "file_count": a.file_count,
+            "files": files_with_url,
+        }));
+    }
+
+    HttpResponse::Ok().json(result)
 }
 
 pub async fn student_grades(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
@@ -1216,7 +1299,7 @@ pub async fn student_course_data(
                 serde_json::json!({
                     "id": f.id,
                     "title": f.title,
-                    "file_url": url   // ← was file_path
+                    "file_url": url
                 })
             })
             .collect();
@@ -1230,4 +1313,105 @@ pub async fn student_course_data(
     }
 
     HttpResponse::Ok().json(serde_json::json!({ "weeks": weeks }))
+}
+
+pub async fn student_assignment_submit(
+    db: web::Data<PgPool>,
+    session: Session,
+    mut payload: actix_multipart::Multipart,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Student) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let student = match sqlx::query!("SELECT id FROM students WHERE user_id = $1", user.id)
+        .fetch_optional(db.get_ref())
+        .await
+    {
+        Ok(Some(s)) => s,
+        _ => return HttpResponse::Forbidden().body("No student profile"),
+    };
+
+    let mut assignment_id: Option<i32> = None;
+    let mut notes: Option<String> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut file_name: Option<String> = None;
+
+    use futures_util::TryStreamExt;
+    while let Ok(Some(mut field)) = payload.try_next().await {
+        let cd = field.content_disposition(); // Option<&ContentDisposition>
+        let name = cd.and_then(|cd| cd.get_name()).unwrap_or("").to_string();
+
+        match name.as_str() {
+            "assignment_id" => { /* ... */ }
+            "notes" => { /* ... */ }
+            "file" => {
+                file_name = cd.and_then(|cd| cd.get_filename()).map(|s| s.to_string());
+                /* ... */
+            }
+            _ => {}
+        }
+    }
+
+    let assignment_id = match assignment_id {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Missing assignment_id"),
+    };
+    let file_bytes = match file_bytes {
+        Some(b) if !b.is_empty() => b,
+        _ => return HttpResponse::BadRequest().body("No file uploaded"),
+    };
+    let file_name = file_name.unwrap_or_else(|| "submission.pdf".to_string());
+
+    let asg = match sqlx::query!(
+        "SELECT a.id, a.course_id FROM assignments a
+         JOIN enrollments e ON e.course_id = a.course_id
+         WHERE a.id = $1 AND e.student_id = $2",
+        assignment_id,
+        student.id
+    )
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(r)) => r,
+        Ok(None) => return HttpResponse::Forbidden().body("Assignment not found or not enrolled"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let storage = crate::storage::SupabaseStorage::from_env();
+    let file_path = format!(
+        "submissions/{}/{}/{}",
+        asg.course_id, assignment_id, file_name
+    );
+
+    if let Err(e) = storage
+        .upload(&file_path, file_bytes, "application/pdf")
+        .await
+    {
+        return HttpResponse::InternalServerError().body(format!("Upload failed: {e}"));
+    }
+
+    let result = sqlx::query!(
+        "INSERT INTO assignment_submissions
+            (assignment_id, student_id, file_name, file_path, notes, submitted_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (assignment_id, student_id)
+         DO UPDATE SET file_name    = EXCLUDED.file_name,
+                       file_path    = EXCLUDED.file_path,
+                       notes        = EXCLUDED.notes,
+                       submitted_at = NOW()",
+        assignment_id,
+        student.id,
+        file_name,
+        file_path,
+        notes
+    )
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().body("submitted"),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }

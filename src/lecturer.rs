@@ -1,7 +1,7 @@
-// use actix_multipart::Multipart;
+use actix_multipart::Multipart;
 use actix_session::Session;
 use actix_web::{HttpResponse, Responder, web};
-// use futures_util::TryStreamExt;
+use futures_util::StreamExt;
 use serde::Serialize;
 use serde_json::json;
 use sqlx::PgPool;
@@ -123,6 +123,27 @@ pub async fn lecturer_courses_page(
 pub struct CreateWeekForm {
     pub week_number: i32,
     pub title: String,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct AssignmentRow {
+    pub id: i32,
+    pub course_id: i32,
+    pub course_code: String,
+    pub course_name: String,
+    pub week_number: Option<i32>,
+    pub title: String,
+    pub description: String,
+    pub due_date: chrono::DateTime<chrono::Utc>,
+    pub max_score: i32,
+    pub file_count: Option<i64>,
+}
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct AssignmentFile {
+    pub id: i32,
+    pub file_name: String,
+    pub file_path: String,
 }
 
 pub async fn create_week(
@@ -314,12 +335,57 @@ pub async fn delete_material(
 
 // ─── OTHER PAGES (unchanged) ──────────────────────────────────────────────────
 
-pub async fn lecturer_assignments_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(u) => u,
+pub async fn lecturer_assignments_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let (user, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
         Err(r) => return r,
     };
-    let ctx = base_ctx(&user, "assignments");
+
+    #[derive(Serialize)]
+    struct CourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        description: String,
+        status: String,
+        trimester: String,
+    }
+
+    let courses = match sqlx::query_as!(
+        CourseRow,
+        r#"SELECT
+            id,
+            course_code                       AS code,
+            course_name                       AS name,
+            COALESCE(description, '')         AS "description!",
+            COALESCE(status, 'Preparing')     AS "status!",
+            COALESCE(trimester, '')           AS "trimester!"
+           FROM courses
+           WHERE lecturer_id = $1
+           ORDER BY course_code"#,
+        lecturer_id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let total_courses = courses.len();
+    let ongoing_count = courses.iter().filter(|c| c.status == "Ongoing").count();
+    let preparing_count = courses.iter().filter(|c| c.status == "Preparing").count();
+
+    let mut ctx = base_ctx(&user, "assignments");
+    ctx.insert("courses", &courses);
+    ctx.insert("total_courses", &total_courses);
+    ctx.insert("ongoing_count", &ongoing_count);
+    ctx.insert("preparing_count", &preparing_count);
+
     let rendered = match tmpl.render("lecturer/assignments.html", &ctx) {
         Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
@@ -491,4 +557,256 @@ pub async fn lecturer_course_data(
     }
 
     HttpResponse::Ok().json(json!({ "weeks": weeks }))
+}
+
+// ─── ASSIGNMENTS DATA (JSON) ──────────────────────────────────────────────────
+
+pub async fn lecturer_assignments_data(
+    db: web::Data<PgPool>,
+    session: Session,
+    query: web::Query<std::collections::HashMap<String, String>>,
+) -> impl Responder {
+    if crate::auth::require_role(&session, UserRole::Lecturer).is_err() {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let course_id: i32 = match query.get("course_id").and_then(|v| v.parse().ok()) {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Missing course_id"),
+    };
+
+    let assignments = match sqlx::query_as!(
+        AssignmentRow,
+        r#"SELECT
+            a.id,
+            a.course_id,
+            c.course_code,
+            c.course_name,
+            a.week_number,
+            a.title,
+            a.description,
+            a.due_date,
+            a.max_score,
+            COUNT(af.id) AS file_count
+           FROM assignments a
+           JOIN courses c ON c.id = a.course_id
+           LEFT JOIN assignment_files af ON af.assignment_id = a.id
+           WHERE a.course_id = $1
+           GROUP BY a.id, c.course_code, c.course_name
+           ORDER BY a.week_number NULLS LAST, a.due_date"#,
+        course_id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    #[derive(Serialize)]
+    struct AssignmentWithFiles {
+        #[serde(flatten)]
+        assignment: AssignmentRow,
+        files: Vec<AssignmentFile>,
+    }
+
+    let mut result = Vec::new();
+    for a in assignments {
+        let files = sqlx::query_as!(
+            AssignmentFile,
+            "SELECT id, file_name, file_path FROM assignment_files WHERE assignment_id = $1",
+            a.id
+        )
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default();
+
+        result.push(AssignmentWithFiles {
+            assignment: a,
+            files,
+        });
+    }
+
+    HttpResponse::Ok().json(result)
+}
+
+// ─── CREATE ASSIGNMENT ────────────────────────────────────────────────────────
+
+pub async fn create_assignment(
+    db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
+    session: Session,
+    mut payload: Multipart,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(u) => u,
+        Err(r) => return r,
+    };
+
+    let mut course_id: Option<i32> = None;
+    let mut week_number: Option<i32> = None;
+    let mut title = String::new();
+    let mut description = String::new();
+    let mut due_date: Option<String> = None;
+    let mut max_score: Option<i32> = None;
+    let mut pdf_files: Vec<(String, Vec<u8>)> = Vec::new();
+
+    while let Some(Ok(mut field)) = payload.next().await {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "course_id" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                course_id = String::from_utf8_lossy(&buf).parse().ok();
+            }
+            "week_number" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                week_number = String::from_utf8_lossy(&buf).parse().ok();
+            }
+            "title" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                title = String::from_utf8_lossy(&buf).to_string();
+            }
+            "description" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                description = String::from_utf8_lossy(&buf).to_string();
+            }
+            "due_date" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                due_date = Some(String::from_utf8_lossy(&buf).to_string());
+            }
+            "max_score" => {
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                max_score = String::from_utf8_lossy(&buf).parse().ok();
+            }
+            "files" => {
+                let fname = field
+                    .content_disposition()
+                    .and_then(|cd| cd.get_filename())
+                    .unwrap_or("file.pdf")
+                    .to_string();
+                let mut buf = Vec::new();
+                while let Some(Ok(c)) = field.next().await {
+                    buf.extend_from_slice(&c);
+                }
+                if !buf.is_empty() {
+                    pdf_files.push((fname, buf));
+                }
+            }
+            _ => while let Some(Ok(_)) = field.next().await {},
+        }
+    }
+
+    let (course_id, week_number) = match (course_id, week_number) {
+        (Some(c), Some(w)) => (c, w),
+        _ => return HttpResponse::BadRequest().body("Missing course_id or week_number"),
+    };
+
+    let deadline_ts = match due_date.as_deref().and_then(|d| {
+        chrono::NaiveDateTime::parse_from_str(d, "%Y-%m-%dT%H:%M")
+            .ok()
+            .map(|ndt| ndt.and_utc())
+    }) {
+        Some(t) => t,
+        None => return HttpResponse::BadRequest().body("Invalid due_date format"),
+    };
+
+    let assignment = match sqlx::query!(
+        r#"INSERT INTO assignments (course_id, week_number, title, description, due_date, max_score, created_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id"#,
+        course_id,
+        week_number,
+        title,
+        description,
+        deadline_ts,
+        max_score.unwrap_or(100),
+        user.id,
+    )
+    .fetch_one(db.get_ref())
+    .await {
+        Ok(r) => r,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    for (fname, bytes) in pdf_files {
+        let object_path = format!("assignments/{}/{}/{}", course_id, assignment.id, fname);
+        if let Err(e) = storage.upload(&object_path, bytes, "application/pdf").await {
+            return HttpResponse::InternalServerError().body(e);
+        }
+        if let Err(e) = sqlx::query!(
+            "INSERT INTO assignment_files (assignment_id, file_name, file_path) VALUES ($1, $2, $3)",
+            assignment.id, fname, object_path,
+        )
+        .execute(db.get_ref())
+        .await {
+            return HttpResponse::InternalServerError().body(e.to_string());
+        }
+    }
+
+    HttpResponse::Ok().json(json!({ "ok": true, "id": assignment.id }))
+}
+
+// ─── DELETE ASSIGNMENT ────────────────────────────────────────────────────────
+
+pub async fn delete_assignment(
+    db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
+    session: Session,
+    path: web::Path<i32>,
+) -> impl Responder {
+    if crate::auth::require_role(&session, UserRole::Lecturer).is_err() {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let assignment_id = path.into_inner();
+
+    let files = sqlx::query!(
+        "SELECT file_path FROM assignment_files WHERE assignment_id = $1",
+        assignment_id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    for f in &files {
+        let _ = storage.delete(&f.file_path).await;
+    }
+
+    let subs = sqlx::query!(
+        "SELECT file_path FROM submissions WHERE assignment_id = $1",
+        assignment_id
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    for s in &subs {
+        let _ = storage.delete(&s.file_path).await;
+    }
+
+    match sqlx::query!("DELETE FROM assignments WHERE id = $1", assignment_id)
+        .execute(db.get_ref())
+        .await
+    {
+        Ok(_) => HttpResponse::Ok().json(json!({ "ok": true })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }

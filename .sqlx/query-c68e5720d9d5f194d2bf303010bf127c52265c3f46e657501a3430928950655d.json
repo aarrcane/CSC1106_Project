@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.course_id FROM assignments a\n         JOIN enrollments e ON e.course_id = a.course_id\n         WHERE a.id = $1 AND e.student_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "course_id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "assignments",
+            "name": "course_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "c68e5720d9d5f194d2bf303010bf127c52265c3f46e657501a3430928950655d"
+}

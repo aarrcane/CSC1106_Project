@@ -589,6 +589,14 @@ async fn main() -> std::io::Result<()> {
                 "/student/quizzes/{quiz_id}/monitoring-events",
                 web::post().to(student_quiz::save_monitoring_event),
             )
+            .route(
+                "/student/assignments/data",
+                web::get().to(student::student_assignments_data),
+            )
+            .route(
+                "/student/assignments/submit",
+                web::post().to(student::student_assignment_submit),
+            )
             // ── Lecturer ──────────────────────────────────────────────────────
             .route(
                 "/lecturer/dashboard",
@@ -674,6 +682,18 @@ async fn main() -> std::io::Result<()> {
             .route(
                 "/lecturer/settings",
                 web::get().to(lecturer::lecturer_settings_page),
+            )
+            .route(
+                "/lecturer/assignments/data",
+                web::get().to(lecturer::lecturer_assignments_data),
+            )
+            .route(
+                "/lecturer/assignments/create",
+                web::post().to(lecturer::create_assignment),
+            )
+            .route(
+                "/lecturer/assignments/{id}/delete",
+                web::delete().to(lecturer::delete_assignment),
             )
             .configure(lecturer_quiz::config)
             // Admin Routes
