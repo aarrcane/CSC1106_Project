@@ -16,6 +16,7 @@ use sqlx::{FromRow, PgPool, postgres::PgPoolOptions};
 use std::env;
 
 mod admin;
+mod attendance;
 mod auth;
 mod forum;
 mod lecturer;
@@ -520,7 +521,11 @@ async fn main() -> std::io::Result<()> {
             )
             .route(
                 "/student/attendance",
-                web::get().to(student::student_attendance),
+                web::get().to(attendance::student_attendance),
+            )
+            .route(
+                "/student/attendance/check-in",
+                web::post().to(attendance::student_check_in),
             )
             .route("/student/forum", web::get().to(forum::student_forum))
             .route(
@@ -640,7 +645,19 @@ async fn main() -> std::io::Result<()> {
             )
             .route(
                 "/lecturer/attendance",
-                web::get().to(lecturer::lecturer_attendance_page),
+                web::get().to(attendance::lecturer_attendance),
+            )
+            .route(
+                "/lecturer/attendance/sessions",
+                web::post().to(attendance::create_session),
+            )
+            .route(
+                "/lecturer/attendance/sessions/{session_id}/close",
+                web::post().to(attendance::close_session),
+            )
+            .route(
+                "/lecturer/attendance/records/{record_id}",
+                web::post().to(attendance::update_record),
             )
             .route("/lecturer/forum", web::get().to(forum::lecturer_forum))
             .route(
