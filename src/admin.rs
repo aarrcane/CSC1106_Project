@@ -49,6 +49,41 @@ pub struct AdminUpdateUserForm {
     pub department: Option<String>,
 }
 
+#[derive(Serialize, FromRow)]
+pub struct AdminForumThreadRow {
+    pub id: i32,
+    pub title: String,
+    pub body: String,
+    pub author: String,
+    pub author_role: String,
+    pub course_code: String,
+    pub course_name: String,
+    pub reply_count: i32,
+    pub view_count: i32,
+    pub is_pinned: bool,
+    pub is_answered: bool,
+    pub locked_at: Option<String>,
+    pub deleted_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Serialize, FromRow)]
+pub struct AdminForumPostRow {
+    pub id: i32,
+    pub thread_id: i32,
+    pub thread_title: String,
+    pub body: String,
+    pub author: String,
+    pub author_role: String,
+    pub deleted_at: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct AdminModerationForm {
+    pub reason: Option<String>,
+}
+
 fn set_admin_user_page_base(ctx: &mut Context, user: &crate::auth::CurrentUser) {
     ctx.insert("display_name", &user.display_name);
     ctx.insert("student_name", &user.display_name);
@@ -736,11 +771,64 @@ pub async fn admin_courses_page(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn admin_content_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn admin_content_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
+
+    let threads = sqlx::query_as::<_, AdminForumThreadRow>(
+        r#"SELECT ft.id,
+                  ft.title,
+                  LEFT(ft.body, 260) AS body,
+                  u.display_name AS author,
+                  u.role AS author_role,
+                  c.course_code,
+                  c.course_name,
+                  ft.reply_count,
+                  ft.view_count,
+                  ft.is_pinned,
+                  ft.is_answered,
+                  CASE WHEN ft.locked_at IS NULL THEN NULL ELSE TO_CHAR(ft.locked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS locked_at,
+                  CASE WHEN ft.deleted_at IS NULL THEN NULL ELSE TO_CHAR(ft.deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
+                  TO_CHAR(ft.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS created_at
+           FROM forum_threads ft
+           JOIN users u ON u.id = ft.created_by
+           JOIN courses c ON c.id = ft.course_id
+           ORDER BY ft.created_at DESC, ft.id DESC
+           LIMIT 100"#,
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let posts = sqlx::query_as::<_, AdminForumPostRow>(
+        r#"SELECT fp.id,
+                  fp.thread_id,
+                  ft.title AS thread_title,
+                  LEFT(fp.body, 260) AS body,
+                  u.display_name AS author,
+                  u.role AS author_role,
+                  CASE WHEN fp.deleted_at IS NULL THEN NULL ELSE TO_CHAR(fp.deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
+                  TO_CHAR(fp.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS created_at
+           FROM forum_posts fp
+           JOIN forum_threads ft ON ft.id = fp.thread_id
+           JOIN users u ON u.id = fp.user_id
+           ORDER BY fp.created_at DESC, fp.id DESC
+           LIMIT 100"#,
+    )
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let total_threads = threads.len();
+    let hidden_threads = threads.iter().filter(|thread| thread.deleted_at.is_some()).count();
+    let locked_threads = threads.iter().filter(|thread| thread.locked_at.is_some()).count();
+    let hidden_posts = posts.iter().filter(|post| post.deleted_at.is_some()).count();
 
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
@@ -749,12 +837,261 @@ pub async fn admin_content_page(tmpl: web::Data<Tera>, session: Session) -> impl
     ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
     ctx.insert("active_page", "content");
     ctx.insert("is_admin", &true);
+    ctx.insert("threads", &threads);
+    ctx.insert("posts", &posts);
+    ctx.insert("total_threads", &total_threads);
+    ctx.insert("hidden_threads", &hidden_threads);
+    ctx.insert("locked_threads", &locked_threads);
+    ctx.insert("hidden_posts", &hidden_posts);
+
+    if let Ok(Some(msg)) = session.get::<String>("content_success") {
+        ctx.insert("content_success", &msg);
+        let _ = session.remove("content_success");
+    }
+    if let Ok(Some(msg)) = session.get::<String>("content_error") {
+        ctx.insert("content_error", &msg);
+        let _ = session.remove("content_error");
+    }
 
     let rendered = match tmpl.render("admin/content_oversight.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+pub async fn admin_moderate_forum_thread(
+    path: web::Path<(i32, String)>,
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<AdminModerationForm>,
+) -> HttpResponse {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let (thread_id, action) = path.into_inner();
+    let reason = form
+        .reason
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("Moderated by admin");
+
+    let result = match action.as_str() {
+        "delete" => {
+            sqlx::query(
+                "UPDATE forum_threads
+                 SET deleted_at = NOW(), deleted_by = $1, delete_reason = $2, updated_at = NOW()
+                 WHERE id = $3 AND deleted_at IS NULL",
+            )
+            .bind(user.id)
+            .bind(reason)
+            .bind(thread_id)
+            .execute(db.get_ref())
+            .await
+        }
+        "restore" => {
+            sqlx::query(
+                "UPDATE forum_threads
+                 SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind(thread_id)
+            .execute(db.get_ref())
+            .await
+        }
+        "lock" => {
+            sqlx::query(
+                "UPDATE forum_threads
+                 SET locked_at = NOW(), locked_by = $1, updated_at = NOW()
+                 WHERE id = $2 AND locked_at IS NULL",
+            )
+            .bind(user.id)
+            .bind(thread_id)
+            .execute(db.get_ref())
+            .await
+        }
+        "unlock" => {
+            sqlx::query(
+                "UPDATE forum_threads
+                 SET locked_at = NULL, locked_by = NULL, updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind(thread_id)
+            .execute(db.get_ref())
+            .await
+        }
+        "pin" => {
+            sqlx::query("UPDATE forum_threads SET is_pinned = TRUE, updated_at = NOW() WHERE id = $1")
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+        }
+        "unpin" => {
+            sqlx::query("UPDATE forum_threads SET is_pinned = FALSE, updated_at = NOW() WHERE id = $1")
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+        }
+        "answered" => {
+            sqlx::query("UPDATE forum_threads SET is_answered = TRUE, updated_at = NOW() WHERE id = $1")
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+        }
+        "unanswered" => {
+            sqlx::query("UPDATE forum_threads SET is_answered = FALSE, updated_at = NOW() WHERE id = $1")
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+        }
+        _ => {
+            let _ = session.insert("content_error", "Unknown moderation action.");
+            return redirect_admin_content();
+        }
+    };
+
+    match result {
+        Ok(done) => {
+            if action != "restore" {
+                let _ = record_admin_forum_action(
+                    db.get_ref(),
+                    user.id,
+                    &action,
+                    "thread",
+                    thread_id,
+                    Some(thread_id),
+                    Some(reason),
+                )
+                .await;
+            }
+            let message = if done.rows_affected() == 0 {
+                "No thread changes were needed.".to_string()
+            } else {
+                format!("Thread moderation action '{action}' applied.")
+            };
+            let _ = session.insert("content_success", &message);
+        }
+        Err(error) => {
+            let _ = session.insert("content_error", &format!("Failed to moderate thread: {error}"));
+        }
+    }
+
+    redirect_admin_content()
+}
+
+pub async fn admin_moderate_forum_post(
+    path: web::Path<(i32, String)>,
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<AdminModerationForm>,
+) -> HttpResponse {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let (post_id, action) = path.into_inner();
+    let reason = form
+        .reason
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("Moderated by admin");
+
+    let result = match action.as_str() {
+        "delete" => {
+            sqlx::query(
+                "UPDATE forum_posts
+                 SET deleted_at = NOW(), deleted_by = $1, delete_reason = $2, updated_at = NOW()
+                 WHERE id = $3 AND deleted_at IS NULL",
+            )
+            .bind(user.id)
+            .bind(reason)
+            .bind(post_id)
+            .execute(db.get_ref())
+            .await
+        }
+        "restore" => {
+            sqlx::query(
+                "UPDATE forum_posts
+                 SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = NOW()
+                 WHERE id = $1",
+            )
+            .bind(post_id)
+            .execute(db.get_ref())
+            .await
+        }
+        _ => {
+            let _ = session.insert("content_error", "Unknown moderation action.");
+            return redirect_admin_content();
+        }
+    };
+
+    match result {
+        Ok(done) => {
+            if action == "delete" {
+                let thread_id = sqlx::query_scalar::<_, i32>(
+                    "SELECT thread_id FROM forum_posts WHERE id = $1",
+                )
+                .bind(post_id)
+                .fetch_optional(db.get_ref())
+                .await
+                .ok()
+                .flatten();
+                let _ = record_admin_forum_action(
+                    db.get_ref(),
+                    user.id,
+                    "delete",
+                    "post",
+                    post_id,
+                    thread_id,
+                    Some(reason),
+                )
+                .await;
+            }
+            let message = if done.rows_affected() == 0 {
+                "No reply changes were needed.".to_string()
+            } else {
+                format!("Reply moderation action '{action}' applied.")
+            };
+            let _ = session.insert("content_success", &message);
+        }
+        Err(error) => {
+            let _ = session.insert("content_error", &format!("Failed to moderate reply: {error}"));
+        }
+    }
+
+    redirect_admin_content()
+}
+
+async fn record_admin_forum_action(
+    db: &PgPool,
+    moderator_user_id: i32,
+    action: &str,
+    target_type: &str,
+    target_id: i32,
+    thread_id: Option<i32>,
+    reason: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO forum_moderation_actions
+         (moderator_user_id, action, target_type, target_id, thread_id, reason)
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(moderator_user_id)
+    .bind(action)
+    .bind(target_type)
+    .bind(target_id)
+    .bind(thread_id)
+    .bind(reason)
+    .execute(db)
+    .await
+    .map(|_| ())
+}
+
+fn redirect_admin_content() -> HttpResponse {
+    HttpResponse::SeeOther()
+        .insert_header(("Location", "/admin/content"))
+        .finish()
 }
 
 pub async fn admin_settings_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {

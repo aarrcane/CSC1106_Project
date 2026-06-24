@@ -5,6 +5,80 @@ use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct StudentProfileDetails {
+    display_name: String,
+    email: String,
+    role: String,
+    is_active: bool,
+    created_at: String,
+    student_id: i32,
+    age: Option<i32>,
+    programme: Option<String>,
+    year_of_study: Option<i32>,
+    enrolled_courses: i64,
+}
+
+#[derive(serde::Serialize, sqlx::FromRow)]
+struct UserPreferenceDetails {
+    email_notifications: bool,
+    course_notifications: bool,
+    forum_notifications: bool,
+    grade_notifications: bool,
+    theme_mode: String,
+}
+
+#[derive(serde::Deserialize)]
+pub struct UserPreferencesForm {
+    email_notifications: Option<String>,
+    course_notifications: Option<String>,
+    forum_notifications: Option<String>,
+    grade_notifications: Option<String>,
+    theme_mode: String,
+}
+
+async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            course_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            forum_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            grade_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            theme_mode VARCHAR(20) NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'dark')),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    )
+    .execute(db)
+    .await
+    .map(|_| ())
+}
+
+async fn load_user_preferences(
+    db: &PgPool,
+    user_id: i32,
+) -> Result<UserPreferenceDetails, sqlx::Error> {
+    ensure_user_preferences_table(db).await?;
+    sqlx::query(
+        "INSERT INTO user_preferences (user_id)
+         VALUES ($1)
+         ON CONFLICT (user_id) DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(db)
+    .await?;
+
+    sqlx::query_as::<_, UserPreferenceDetails>(
+        "SELECT email_notifications, course_notifications, forum_notifications,
+                grade_notifications, theme_mode
+         FROM user_preferences
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+}
+
 pub async fn student_dashboard(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
@@ -1232,6 +1306,145 @@ pub async fn student_forum(tmpl: web::Data<Tera>, session: Session) -> impl Resp
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+pub async fn student_profile_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let profile = match sqlx::query_as::<_, StudentProfileDetails>(
+        "SELECT
+             u.display_name,
+             u.email,
+             u.role,
+             u.is_active,
+             to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+             s.id AS student_id,
+             s.age,
+             s.programme,
+             s.year_of_study,
+             COUNT(e.id)::BIGINT AS enrolled_courses
+         FROM users u
+         JOIN students s ON s.user_id = u.id
+         LEFT JOIN enrollments e ON e.student_id = s.id
+         WHERE u.id = $1
+         GROUP BY u.id, s.id",
+    )
+    .bind(user.id)
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => return HttpResponse::InternalServerError().body("Student profile not found"),
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    let mut ctx = Context::new();
+    crate::insert_student_base(&mut ctx, &user.display_name, &profile.student_id.to_string());
+    ctx.insert("active_page", "profile");
+    ctx.insert("profile", &profile);
+
+    let rendered = match tmpl.render("student/profile.html", &ctx) {
+        Ok(html) => html,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+pub async fn student_settings_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let preferences = match load_user_preferences(db.get_ref(), user.id).await {
+        Ok(preferences) => preferences,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    let student_id = sqlx::query_scalar::<_, i32>("SELECT id FROM students WHERE user_id = $1")
+        .bind(user.id)
+        .fetch_optional(db.get_ref())
+        .await
+        .ok()
+        .flatten()
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+
+    let mut ctx = Context::new();
+    crate::insert_student_base(&mut ctx, &user.display_name, &student_id);
+    ctx.insert("active_page", "settings");
+    ctx.insert("preferences", &preferences);
+    if let Ok(Some(message)) = session.get::<String>("settings_success") {
+        ctx.insert("settings_success", &message);
+        let _ = session.remove("settings_success");
+    }
+
+    let rendered = match tmpl.render("student/settings.html", &ctx) {
+        Ok(html) => html,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+pub async fn student_settings_submit(
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<UserPreferencesForm>,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Student) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let form = form.into_inner();
+    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
+
+    if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
+        return HttpResponse::InternalServerError().body(error.to_string());
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO user_preferences (
+             user_id, email_notifications, course_notifications, forum_notifications,
+             grade_notifications, theme_mode, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id) DO UPDATE
+         SET email_notifications = EXCLUDED.email_notifications,
+             course_notifications = EXCLUDED.course_notifications,
+             forum_notifications = EXCLUDED.forum_notifications,
+             grade_notifications = EXCLUDED.grade_notifications,
+             theme_mode = EXCLUDED.theme_mode,
+             updated_at = NOW()",
+    )
+    .bind(user.id)
+    .bind(form.email_notifications.is_some())
+    .bind(form.course_notifications.is_some())
+    .bind(form.forum_notifications.is_some())
+    .bind(form.grade_notifications.is_some())
+    .bind(theme_mode)
+    .execute(db.get_ref())
+    .await;
+
+    if let Err(error) = result {
+        return HttpResponse::InternalServerError().body(error.to_string());
+    }
+
+    let _ = session.insert("settings_success", "Settings saved.");
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/student/settings"))
+        .finish()
 }
 
 pub async fn student_course_data(

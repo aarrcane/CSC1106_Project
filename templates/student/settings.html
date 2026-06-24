@@ -1,6 +1,6 @@
-{% extends "base_lecturer.html" %}
+{% extends "base_student.html" %}
 
-{% block title %}Settings - Lecturer{% endblock %}
+{% block title %}Settings - Student{% endblock %}
 
 {% block content %}
 <div class="page-header">
@@ -14,7 +14,7 @@
 <div class="alert alert-success">{{ settings_success }}</div>
 {% endif %}
 
-<form method="post" action="/lecturer/settings" class="card border-0 shadow-sm">
+<form method="post" action="/student/settings" class="card border-0 shadow-sm">
   <div class="card-header bg-white border-bottom py-3 px-4">
     <h6 class="fw-bold mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Preferences</h6>
   </div>
@@ -36,13 +36,13 @@
       <div class="col-12 col-md-6">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="forum_notifications" name="forum_notifications" {% if preferences.forum_notifications %}checked{% endif %}>
-          <label class="form-check-label" for="forum_notifications">Forum moderation</label>
+          <label class="form-check-label" for="forum_notifications">Forum replies</label>
         </div>
       </div>
       <div class="col-12 col-md-6">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="grade_notifications" name="grade_notifications" {% if preferences.grade_notifications %}checked{% endif %}>
-          <label class="form-check-label" for="grade_notifications">Grade workflow</label>
+          <label class="form-check-label" for="grade_notifications">Grade releases</label>
         </div>
       </div>
     </div>

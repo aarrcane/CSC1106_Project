@@ -138,6 +138,16 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    course_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    forum_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    grade_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+    theme_mode VARCHAR(20) NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'dark')),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS forum_threads (
     id SERIAL PRIMARY KEY,
     course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,

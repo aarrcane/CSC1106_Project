@@ -14,8 +14,28 @@
   <!-- Custom CSS -->
   <link rel="stylesheet" href="/static/style.css" />
 
+  <script>
+    (function () {
+      try {
+        var storedTheme = localStorage.getItem('lms-theme');
+        var cookieTheme = document.cookie
+          .split('; ')
+          .find(function (row) { return row.indexOf('lms-theme=') === 0; });
+        var theme = storedTheme || (cookieTheme ? decodeURIComponent(cookieTheme.split('=')[1]) : 'light');
+        if (theme === 'dark') {
+          document.documentElement.classList.add('theme-dark');
+          document.documentElement.setAttribute('data-bs-theme', 'dark');
+        } else {
+          document.documentElement.classList.remove('theme-dark');
+          document.documentElement.setAttribute('data-bs-theme', 'light');
+        }
+      } catch (e) {}
+    })();
+  </script>
+
   <!-- Per-page extra CSS (optional) -->
   {% block extra_css %}{% endblock %}
+  <link rel="stylesheet" href="/static/dark-theme.css" />
 </head>
 
 <body class="lms-body notranslate" translate="no">

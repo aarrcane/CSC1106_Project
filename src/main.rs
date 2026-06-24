@@ -563,6 +563,18 @@ async fn main() -> std::io::Result<()> {
                 "/student/course/{id}/data",
                 web::get().to(student::student_course_data),
             )
+            .route(
+                "/student/profile",
+                web::get().to(student::student_profile_page),
+            )
+            .route(
+                "/student/settings",
+                web::get().to(student::student_settings_page),
+            )
+            .route(
+                "/student/settings",
+                web::post().to(student::student_settings_submit),
+            )
             // ── Student quizzes ───────────────────────
             .route("/student/quizzes", web::get().to(student_quiz::quiz_list))
             .route(
@@ -684,6 +696,10 @@ async fn main() -> std::io::Result<()> {
                 web::get().to(lecturer::lecturer_settings_page),
             )
             .route(
+                "/lecturer/settings",
+                web::post().to(lecturer::lecturer_settings_submit),
+            )
+            .route(
                 "/lecturer/assignments/data",
                 web::get().to(lecturer::lecturer_assignments_data),
             )
@@ -728,6 +744,14 @@ async fn main() -> std::io::Result<()> {
                 web::delete().to(admin::delete_course),
             )
             .route("/admin/content", web::get().to(admin::admin_content_page))
+            .route(
+                "/admin/content/forum/thread/{id}/{action}",
+                web::post().to(admin::admin_moderate_forum_thread),
+            )
+            .route(
+                "/admin/content/forum/post/{id}/{action}",
+                web::post().to(admin::admin_moderate_forum_post),
+            )
             .route(
                 "/admin/course/{id}/enrollments",
                 web::get().to(admin::get_course_enrollments),

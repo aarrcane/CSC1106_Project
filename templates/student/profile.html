@@ -1,27 +1,27 @@
-{% extends "base_lecturer.html" %}
+{% extends "base_student.html" %}
 
-{% block title %}Profile - Lecturer{% endblock %}
+{% block title %}Profile - Student{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div class="page-header-left">
     <h4>Profile</h4>
-    <p>View your lecturer account and staff details.</p>
+    <p>View your student account and academic details.</p>
   </div>
 </div>
 
 <div class="course-stats-bar">
   <div class="course-stat-card primary">
-    <div class="course-stat-value">{{ profile.lecturer_id }}</div>
-    <div class="course-stat-label">Lecturer ID</div>
+    <div class="course-stat-value">{{ profile.student_id }}</div>
+    <div class="course-stat-label">Student ID</div>
   </div>
   <div class="course-stat-card success">
-    <div class="course-stat-value">{{ profile.assigned_courses }}</div>
-    <div class="course-stat-label">Assigned Courses</div>
+    <div class="course-stat-value">{{ profile.enrolled_courses }}</div>
+    <div class="course-stat-label">Enrolled Courses</div>
   </div>
   <div class="course-stat-card">
-    <div class="course-stat-value">{{ profile.staff_no }}</div>
-    <div class="course-stat-label">Staff Number</div>
+    <div class="course-stat-value">{% if profile.year_of_study %}{{ profile.year_of_study }}{% else %}-{% endif %}</div>
+    <div class="course-stat-label">Year of Study</div>
   </div>
 </div>
 
@@ -37,12 +37,12 @@
           <dd class="col-sm-8 mb-0 fw-semibold">{{ profile.display_name }}</dd>
           <dt class="col-sm-4 text-muted small">Email</dt>
           <dd class="col-sm-8 mb-0">{{ profile.email }}</dd>
+          <dt class="col-sm-4 text-muted small">Age</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.age %}{{ profile.age }}{% else %}-{% endif %}</dd>
           <dt class="col-sm-4 text-muted small">Status</dt>
           <dd class="col-sm-8 mb-0">
             {% if profile.is_active %}<span class="status-badge status-ongoing">Active</span>{% else %}<span class="status-badge status-archived">Inactive</span>{% endif %}
           </dd>
-          <dt class="col-sm-4 text-muted small">Created</dt>
-          <dd class="col-sm-8 mb-0">{{ profile.created_at }}</dd>
         </dl>
       </div>
     </div>
@@ -50,18 +50,18 @@
   <div class="col-12 col-lg-6">
     <div class="card border-0 shadow-sm h-100">
       <div class="card-header bg-white border-bottom py-3 px-4">
-        <h6 class="fw-bold mb-0"><i class="bi bi-building me-2 text-success"></i>Staff Details</h6>
+        <h6 class="fw-bold mb-0"><i class="bi bi-mortarboard me-2 text-success"></i>Academic Details</h6>
       </div>
       <div class="card-body px-4 py-3">
         <dl class="row mb-0 g-3">
-          <dt class="col-sm-4 text-muted small">Staff No.</dt>
-          <dd class="col-sm-8 mb-0">{{ profile.staff_no }}</dd>
-          <dt class="col-sm-4 text-muted small">Department</dt>
-          <dd class="col-sm-8 mb-0">{{ profile.department }}</dd>
+          <dt class="col-sm-4 text-muted small">Programme</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.programme %}{{ profile.programme }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-4 text-muted small">Year</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.year_of_study %}Year {{ profile.year_of_study }}{% else %}-{% endif %}</dd>
           <dt class="col-sm-4 text-muted small">Role</dt>
           <dd class="col-sm-8 mb-0 text-capitalize">{{ profile.role }}</dd>
-          <dt class="col-sm-4 text-muted small">Courses</dt>
-          <dd class="col-sm-8 mb-0">{{ profile.assigned_courses }} assigned</dd>
+          <dt class="col-sm-4 text-muted small">Created</dt>
+          <dd class="col-sm-8 mb-0">{{ profile.created_at }}</dd>
         </dl>
       </div>
     </div>
