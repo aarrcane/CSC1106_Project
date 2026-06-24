@@ -1442,8 +1442,10 @@ pub async fn student_settings_submit(
     }
 
     let _ = session.insert("settings_success", "Settings saved.");
+    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/student/settings"))
+        .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))
         .finish()
 }
 

@@ -7,20 +7,11 @@
   <meta name="google" content="notranslate" />
   <title>LMS Portal</title>
   <script>
+    // Force light mode on the public login page so it remains readable
     (function () {
       try {
-        var storedTheme = localStorage.getItem('lms-theme');
-        var cookieTheme = document.cookie
-          .split('; ')
-          .find(function (row) { return row.indexOf('lms-theme=') === 0; });
-        var theme = storedTheme || (cookieTheme ? decodeURIComponent(cookieTheme.split('=')[1]) : 'light');
-        if (theme === 'dark') {
-          document.documentElement.classList.add('theme-dark');
-          document.documentElement.setAttribute('data-bs-theme', 'dark');
-        } else {
-          document.documentElement.classList.remove('theme-dark');
-          document.documentElement.setAttribute('data-bs-theme', 'light');
-        }
+        document.documentElement.classList.remove('theme-dark');
+        document.documentElement.setAttribute('data-bs-theme', 'light');
       } catch (e) {}
     })();
   </script>

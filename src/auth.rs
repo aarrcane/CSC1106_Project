@@ -121,16 +121,38 @@ pub async fn login_submit(
         return redirect("/password/change");
     }
 
+    // Fetch user's saved theme (default to light) and set a cookie so pages can apply it immediately
+    let theme_mode: String = sqlx::query_scalar(
+        "SELECT theme_mode FROM user_preferences WHERE user_id = $1",
+    )
+    .bind(user.id)
+    .fetch_optional(db.get_ref())
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "light".to_string());
+
     let Some(role) = UserRole::from_slug(&user.role) else {
         return HttpResponse::InternalServerError().body("Unknown user role");
     };
 
-    redirect(role.home_path())
+    let location = role.home_path();
+    let mut builder = HttpResponse::SeeOther();
+    builder.insert_header((header::LOCATION, location));
+    builder.insert_header((header::CACHE_CONTROL, "no-store"));
+
+    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    builder.insert_header((header::SET_COOKIE, cookie_val));
+
+    builder.finish()
 }
 
 pub async fn logout(session: Session) -> HttpResponse {
     session.purge();
-    redirect("/")
+    HttpResponse::SeeOther()
+        .insert_header((header::LOCATION, "/"))
+        .insert_header((header::SET_COOKIE, "lms-theme=; Path=/; Max-Age=0; SameSite=Lax"))
+        .finish()
 }
 
 pub fn redirect_authenticated_user(
