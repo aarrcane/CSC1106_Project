@@ -395,6 +395,16 @@ pub async fn student_assignments_data(
         file_path: String,
     }
 
+    #[derive(serde::Serialize, sqlx::FromRow)]
+    struct StudentSubmissionRow {
+        id: i32,
+        file_path: String,
+        submitted_at: chrono::DateTime<chrono::Utc>,
+        status: String,
+        grade: Option<f64>,
+        feedback: Option<String>,
+    }
+
     let assignments = match sqlx::query_as!(
         AsgRow,
         r#"SELECT a.id, a.week_number, a.title,
@@ -437,6 +447,31 @@ pub async fn student_assignments_data(
             })
             .collect();
 
+        let submission = match sqlx::query_as::<_, StudentSubmissionRow>(
+            "SELECT id, file_path, submitted_at, status, grade::float8 AS grade, feedback
+             FROM submissions
+             WHERE assignment_id = $1 AND student_id = $2
+             ORDER BY submitted_at DESC
+             LIMIT 1",
+        )
+        .bind(a.id)
+        .bind(student.id)
+        .fetch_optional(db.get_ref())
+        .await
+        {
+            Ok(Some(s)) => Some(serde_json::json!({
+                "id": s.id,
+                "file_name": storage_filename(&s.file_path),
+                "file_url": storage.public_url(&s.file_path),
+                "submitted_at": s.submitted_at,
+                "status": s.status,
+                "grade": s.grade,
+                "feedback": s.feedback,
+            })),
+            Ok(None) => None,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+
         result.push(serde_json::json!({
             "id": a.id,
             "week_number": a.week_number,
@@ -446,6 +481,7 @@ pub async fn student_assignments_data(
             "max_score": a.max_score,
             "file_count": a.file_count,
             "files": files_with_url,
+            "submission": submission,
         }));
     }
 
@@ -1532,6 +1568,7 @@ pub async fn student_course_data(
 
 pub async fn student_assignment_submit(
     db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
     session: Session,
     mut payload: actix_multipart::Multipart,
 ) -> impl Responder {
@@ -1552,20 +1589,49 @@ pub async fn student_assignment_submit(
     let mut notes: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut file_name: Option<String> = None;
+    let mut content_type = "application/pdf".to_string();
 
     use futures_util::TryStreamExt;
     while let Ok(Some(mut field)) = payload.try_next().await {
         let cd = field.content_disposition(); // Option<&ContentDisposition>
         let name = cd.and_then(|cd| cd.get_name()).unwrap_or("").to_string();
+        let field_filename = cd.and_then(|cd| cd.get_filename()).map(|s| s.to_string());
 
         match name.as_str() {
-            "assignment_id" => { /* ... */ }
-            "notes" => { /* ... */ }
-            "file" => {
-                file_name = cd.and_then(|cd| cd.get_filename()).map(|s| s.to_string());
-                /* ... */
+            "assignment_id" => {
+                let mut bytes = Vec::new();
+                while let Ok(Some(chunk)) = field.try_next().await {
+                    bytes.extend_from_slice(&chunk);
+                }
+                assignment_id = String::from_utf8_lossy(&bytes).trim().parse().ok();
             }
-            _ => {}
+            "notes" => {
+                let mut bytes = Vec::new();
+                while let Ok(Some(chunk)) = field.try_next().await {
+                    bytes.extend_from_slice(&chunk);
+                }
+                let value = String::from_utf8_lossy(&bytes).trim().to_string();
+                if !value.is_empty() {
+                    notes = Some(value);
+                }
+            }
+            "file" => {
+                file_name = field_filename;
+                content_type = field
+                    .content_type()
+                    .map(|m| m.to_string())
+                    .unwrap_or_else(|| "application/pdf".to_string());
+
+                let mut bytes = Vec::new();
+                while let Ok(Some(chunk)) = field.try_next().await {
+                    bytes.extend_from_slice(&chunk);
+                    if bytes.len() > 20 * 1024 * 1024 {
+                        return HttpResponse::BadRequest().body("File must be 20 MB or smaller");
+                    }
+                }
+                file_bytes = Some(bytes);
+            }
+            _ => while let Ok(Some(_)) = field.try_next().await {},
         }
     }
 
@@ -1577,15 +1643,30 @@ pub async fn student_assignment_submit(
         Some(b) if !b.is_empty() => b,
         _ => return HttpResponse::BadRequest().body("No file uploaded"),
     };
-    let file_name = file_name.unwrap_or_else(|| "submission.pdf".to_string());
+    let file_name =
+        sanitize_storage_filename(&file_name.unwrap_or_else(|| "submission.pdf".to_string()));
+    let file_name = if file_name.is_empty() {
+        "submission.pdf".to_string()
+    } else {
+        file_name
+    };
+    if !file_name.to_ascii_lowercase().ends_with(".pdf") {
+        return HttpResponse::BadRequest().body("Only PDF submissions are accepted");
+    }
 
-    let asg = match sqlx::query!(
-        "SELECT a.id, a.course_id FROM assignments a
+    #[derive(sqlx::FromRow)]
+    struct AssignmentTarget {
+        course_id: i32,
+        due_date: chrono::DateTime<chrono::Utc>,
+    }
+
+    let asg = match sqlx::query_as::<_, AssignmentTarget>(
+        "SELECT a.course_id, a.due_date FROM assignments a
          JOIN enrollments e ON e.course_id = a.course_id
          WHERE a.id = $1 AND e.student_id = $2",
-        assignment_id,
-        student.id
     )
+    .bind(assignment_id)
+    .bind(student.id)
     .fetch_optional(db.get_ref())
     .await
     {
@@ -1594,34 +1675,62 @@ pub async fn student_assignment_submit(
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
 
-    let storage = crate::storage::SupabaseStorage::from_env();
     let file_path = format!(
-        "submissions/{}/{}/{}",
-        asg.course_id, assignment_id, file_name
+        "submissions/{}/{}/student_{}_{}",
+        asg.course_id, assignment_id, student.id, file_name
     );
 
-    if let Err(e) = storage
-        .upload(&file_path, file_bytes, "application/pdf")
-        .await
+    #[derive(sqlx::FromRow)]
+    struct ExistingSubmission {
+        file_path: String,
+    }
+
+    if let Some(old_submission) = sqlx::query_as::<_, ExistingSubmission>(
+        "SELECT file_path FROM submissions WHERE assignment_id = $1 AND student_id = $2",
+    )
+    .bind(assignment_id)
+    .bind(student.id)
+    .fetch_optional(db.get_ref())
+    .await
+    .ok()
+    .flatten()
     {
+        let _ = storage.delete(&old_submission.file_path).await;
+        let _ = sqlx::query("DELETE FROM submissions WHERE assignment_id = $1 AND student_id = $2")
+            .bind(assignment_id)
+            .bind(student.id)
+            .execute(db.get_ref())
+            .await;
+    }
+
+    if storage.base_url.is_empty()
+        || storage.bucket.is_empty()
+        || storage.service_role_key.is_empty()
+    {
+        return HttpResponse::InternalServerError()
+            .body("Supabase Storage is not configured in .env.");
+    }
+
+    if let Err(e) = storage.upload(&file_path, file_bytes, &content_type).await {
         return HttpResponse::InternalServerError().body(format!("Upload failed: {e}"));
     }
 
-    let result = sqlx::query!(
-        "INSERT INTO assignment_submissions
-            (assignment_id, student_id, file_name, file_path, notes, submitted_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
-         ON CONFLICT (assignment_id, student_id)
-         DO UPDATE SET file_name    = EXCLUDED.file_name,
-                       file_path    = EXCLUDED.file_path,
-                       notes        = EXCLUDED.notes,
-                       submitted_at = NOW()",
-        assignment_id,
-        student.id,
-        file_name,
-        file_path,
-        notes
+    let status = if chrono::Utc::now() > asg.due_date {
+        "late"
+    } else {
+        "submitted"
+    };
+
+    let result = sqlx::query(
+        "INSERT INTO submissions
+            (assignment_id, student_id, file_path, submitted_at, status, feedback)
+         VALUES ($1, $2, $3, NOW(), $4, $5)",
     )
+    .bind(assignment_id)
+    .bind(student.id)
+    .bind(file_path)
+    .bind(status)
+    .bind(notes)
     .execute(db.get_ref())
     .await;
 
@@ -1629,4 +1738,23 @@ pub async fn student_assignment_submit(
         Ok(_) => HttpResponse::Ok().body("submitted"),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
+}
+
+fn sanitize_storage_filename(filename: &str) -> String {
+    let sanitized: String = filename
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    sanitized.trim_matches('_').trim_matches('.').to_string()
+}
+
+fn storage_filename(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
 }

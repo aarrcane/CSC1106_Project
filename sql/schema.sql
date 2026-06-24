@@ -30,7 +30,10 @@ CREATE TABLE IF NOT EXISTS courses (
     course_code VARCHAR(20) UNIQUE NOT NULL,
     course_name VARCHAR(100) NOT NULL,
     description TEXT NOT NULL,
-    lecturer_id INT NOT NULL REFERENCES lecturers(id) ON DELETE RESTRICT
+    trimester VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'Preparing',
+    lecturer_id INT NOT NULL REFERENCES lecturers(id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS enrollments (
@@ -54,6 +57,7 @@ CREATE TABLE IF NOT EXISTS assignments (
     id SERIAL PRIMARY KEY,
     course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     created_by INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    week_number INT,
     title VARCHAR(200) NOT NULL,
     description TEXT NOT NULL,
     due_date TIMESTAMPTZ NOT NULL,
@@ -61,14 +65,32 @@ CREATE TABLE IF NOT EXISTS assignments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS course_weeks (
+    id SERIAL PRIMARY KEY,
+    course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    week_number INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (course_id, week_number)
+);
+
 CREATE TABLE IF NOT EXISTS course_materials (
     id SERIAL PRIMARY KEY,
     course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+    week_id INT REFERENCES course_weeks(id) ON DELETE CASCADE,
     uploaded_by INT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
     title VARCHAR(200) NOT NULL,
     description TEXT,
     file_path VARCHAR(500) NOT NULL,
     material_type VARCHAR(50) NOT NULL,
+    uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS assignment_files (
+    id SERIAL PRIMARY KEY,
+    assignment_id INT NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(500) NOT NULL,
     uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -92,7 +114,8 @@ CREATE TABLE IF NOT EXISTS submissions (
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'submitted', 'late', 'graded')),
     grade DECIMAL(5,2),
-    feedback TEXT
+    feedback TEXT,
+    UNIQUE (assignment_id, student_id)
 );
 
 CREATE TABLE IF NOT EXISTS quiz_questions (

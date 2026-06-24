@@ -711,6 +711,10 @@ async fn main() -> std::io::Result<()> {
                 "/lecturer/assignments/{id}/delete",
                 web::delete().to(lecturer::delete_assignment),
             )
+            .route(
+                "/lecturer/submissions/{id}/grade",
+                web::post().to(lecturer::grade_submission),
+            )
             .configure(lecturer_quiz::config)
             // Admin Routes
             .route("/admin/dashboard", web::get().to(admin::admin_dashboard))

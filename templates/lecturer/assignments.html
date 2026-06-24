@@ -508,6 +508,35 @@
                   </span>`).join('')}
              </div>`
           : '';
+        const submissionsHtml = (a.submissions && a.submissions.length)
+          ? `<div style="display:flex;flex-direction:column;gap:0.375rem;margin-top:0.5rem">
+               ${a.submissions.map(s => `
+                 <div style="border:1px solid rgba(0,0,0,0.08);border-radius:0.5rem;padding:0.5rem;display:flex;flex-direction:column;gap:0.5rem">
+                   <div style="display:flex;flex-wrap:wrap;gap:0.375rem;align-items:center">
+                     <a href="${escHtml(s.file_url)}" target="_blank" rel="noopener" class="file-pill" style="width:max-content;max-width:100%">
+                       <i data-lucide="download" width="10" height="10"></i>
+                       ${escHtml(s.student_name)} - ${escHtml(s.file_name)}
+                     </a>
+                     ${s.status === 'graded' ? `<span class="tag-score"><i data-lucide="check-circle" width="10" height="10"></i> ${Number(s.grade ?? 0).toFixed(1)} / ${a.max_score}</span>` : ''}
+                   </div>
+                   <div style="display:grid;grid-template-columns:minmax(72px,96px) 1fr auto;gap:0.375rem;align-items:center">
+                     <input id="grade-${s.id}" type="number" min="0" max="${a.max_score}" step="0.1"
+                            value="${s.grade ?? ''}" placeholder="Score"
+                            style="border:1px solid rgba(0,0,0,0.12);border-radius:0.45rem;padding:0.35rem 0.5rem;font-size:0.8rem">
+                     <input id="feedback-${s.id}" type="text" value="${escAttr(s.feedback || '')}" placeholder="Feedback"
+                            style="border:1px solid rgba(0,0,0,0.12);border-radius:0.45rem;padding:0.35rem 0.5rem;font-size:0.8rem">
+                     <button type="button" class="btn-lms btn-lms-primary btn-lms-sm"
+                             onclick="saveSubmissionGrade(${s.id},${a.max_score},${courseId})">
+                       <i data-lucide="save" width="12" height="12"></i> Save
+                     </button>
+                   </div>
+                 </div>
+               `).join('')}
+             </div>`
+          : `<div class="asg-meta-row" style="color:var(--color-text-muted)">
+               <i data-lucide="inbox" width="12" height="12"></i>
+               No student submissions yet
+             </div>`;
 
         html += `
           <article class="asg-card">
@@ -531,7 +560,12 @@
                 <i data-lucide="paperclip" width="12" height="12"></i>
                 ${a.file_count ?? 0} file(s) attached
               </div>
+              <div class="asg-meta-row">
+                <i data-lucide="upload" width="12" height="12"></i>
+                ${a.submission_count ?? 0} submission(s)
+              </div>
               ${filesHtml}
+              ${submissionsHtml}
             </div>
             <div class="asg-card-footer">
               <button type="button" class="btn-lms btn-lms-danger btn-lms-sm"
@@ -564,6 +598,33 @@
       if (res.ok) { showToast('Assignment deleted.', 'success'); reloadPanel(courseId); }
       else         showToast('Delete failed: ' + await res.text(), 'error');
     } catch { showToast('Network error.', 'error'); }
+  }
+
+  async function saveSubmissionGrade(submissionId, maxScore, courseId) {
+    const gradeInput = document.getElementById('grade-' + submissionId);
+    const feedbackInput = document.getElementById('feedback-' + submissionId);
+    const grade = Number(gradeInput.value);
+
+    if (!Number.isFinite(grade) || grade < 0 || grade > maxScore) {
+      showToast('Enter a score between 0 and ' + maxScore + '.', 'error');
+      return;
+    }
+
+    try {
+      const res = await fetch('/lecturer/submissions/' + submissionId + '/grade', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade, feedback: feedbackInput.value })
+      });
+      if (res.ok) {
+        showToast('Grade saved.', 'success');
+        await reloadPanel(courseId);
+      } else {
+        showToast('Save failed: ' + await res.text(), 'error');
+      }
+    } catch {
+      showToast('Network error.', 'error');
+    }
   }
 
   /* ── File selection ── */
@@ -664,6 +725,9 @@
   }
   function escJs(s) {
     return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+  }
+  function escAttr(s) {
+    return escHtml(s).replace(/"/g, '&quot;');
   }
 </script>
 {% endblock %}

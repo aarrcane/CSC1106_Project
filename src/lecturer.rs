@@ -736,20 +736,21 @@ pub async fn lecturer_course_data(
 
 pub async fn lecturer_assignments_data(
     db: web::Data<PgPool>,
+    storage: web::Data<crate::storage::SupabaseStorage>,
     session: Session,
     query: web::Query<std::collections::HashMap<String, String>>,
 ) -> impl Responder {
-    if crate::auth::require_role(&session, UserRole::Lecturer).is_err() {
-        return HttpResponse::Unauthorized().finish();
-    }
+    let (_, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
 
     let course_id: i32 = match query.get("course_id").and_then(|v| v.parse().ok()) {
         Some(id) => id,
         None => return HttpResponse::BadRequest().body("Missing course_id"),
     };
 
-    let assignments = match sqlx::query_as!(
-        AssignmentRow,
+    let assignments = match sqlx::query_as::<_, AssignmentRow>(
         r#"SELECT
             a.id,
             a.course_id,
@@ -764,11 +765,12 @@ pub async fn lecturer_assignments_data(
            FROM assignments a
            JOIN courses c ON c.id = a.course_id
            LEFT JOIN assignment_files af ON af.assignment_id = a.id
-           WHERE a.course_id = $1
+           WHERE a.course_id = $1 AND c.lecturer_id = $2
            GROUP BY a.id, c.course_code, c.course_name
            ORDER BY a.week_number NULLS LAST, a.due_date"#,
-        course_id
     )
+    .bind(course_id)
+    .bind(lecturer_id)
     .fetch_all(db.get_ref())
     .await
     {
@@ -781,6 +783,19 @@ pub async fn lecturer_assignments_data(
         #[serde(flatten)]
         assignment: AssignmentRow,
         files: Vec<AssignmentFile>,
+        submissions: Vec<serde_json::Value>,
+        submission_count: usize,
+    }
+
+    #[derive(Serialize, sqlx::FromRow)]
+    struct SubmissionRow {
+        id: i32,
+        student_name: String,
+        file_path: String,
+        submitted_at: chrono::DateTime<chrono::Utc>,
+        status: String,
+        grade: Option<f64>,
+        feedback: Option<String>,
     }
 
     let mut result = Vec::new();
@@ -794,13 +809,125 @@ pub async fn lecturer_assignments_data(
         .await
         .unwrap_or_default();
 
+        let submission_rows = sqlx::query_as::<_, SubmissionRow>(
+            "SELECT
+                 s.id,
+                 u.display_name AS student_name,
+                 s.file_path,
+                 s.submitted_at,
+                 s.status,
+                 s.grade::float8 AS grade,
+                 s.feedback
+             FROM submissions s
+             JOIN students st ON st.id = s.student_id
+             JOIN users u ON u.id = st.user_id
+             WHERE s.assignment_id = $1
+             ORDER BY s.submitted_at DESC",
+        )
+        .bind(a.id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default();
+
+        let submissions: Vec<serde_json::Value> = submission_rows
+            .into_iter()
+            .map(|s| {
+                json!({
+                    "id": s.id,
+                    "student_name": s.student_name,
+                    "file_name": storage_filename(&s.file_path),
+                    "file_url": storage.public_url(&s.file_path),
+                    "submitted_at": s.submitted_at,
+                    "status": s.status,
+                    "grade": s.grade,
+                    "feedback": s.feedback,
+                })
+            })
+            .collect();
+        let submission_count = submissions.len();
+
         result.push(AssignmentWithFiles {
             assignment: a,
             files,
+            submissions,
+            submission_count,
         });
     }
 
     HttpResponse::Ok().json(result)
+}
+
+fn storage_filename(path: &str) -> String {
+    path.rsplit('/').next().unwrap_or(path).to_string()
+}
+
+#[derive(serde::Deserialize)]
+pub struct GradeSubmissionForm {
+    grade: f64,
+    feedback: Option<String>,
+}
+
+pub async fn grade_submission(
+    db: web::Data<PgPool>,
+    session: Session,
+    path: web::Path<i32>,
+    form: web::Json<GradeSubmissionForm>,
+) -> impl Responder {
+    let (_, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
+        Err(r) => return r,
+    };
+
+    let submission_id = path.into_inner();
+    let feedback = form.feedback.as_deref().unwrap_or("").trim();
+    let feedback = if feedback.is_empty() {
+        None
+    } else {
+        Some(feedback.to_string())
+    };
+
+    if !form.grade.is_finite() || form.grade < 0.0 {
+        return HttpResponse::BadRequest().body("Grade must be zero or higher");
+    }
+
+    let target = match sqlx::query(
+        "SELECT a.max_score
+         FROM submissions s
+         JOIN assignments a ON a.id = s.assignment_id
+         JOIN courses c ON c.id = a.course_id
+         WHERE s.id = $1 AND c.lecturer_id = $2",
+    )
+    .bind(submission_id)
+    .bind(lecturer_id)
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return HttpResponse::Forbidden().body("Submission not found for your course"),
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    use sqlx::Row;
+    let max_score: i32 = target.get("max_score");
+    if form.grade > max_score as f64 {
+        return HttpResponse::BadRequest().body("Grade cannot exceed assignment max score");
+    }
+
+    let result = sqlx::query(
+        "UPDATE submissions
+         SET grade = $1::numeric, feedback = $2, status = 'graded'
+         WHERE id = $3",
+    )
+    .bind(form.grade)
+    .bind(feedback)
+    .bind(submission_id)
+    .execute(db.get_ref())
+    .await;
+
+    match result {
+        Ok(_) => HttpResponse::Ok().json(json!({ "ok": true })),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
 }
 
 // ─── CREATE ASSIGNMENT ────────────────────────────────────────────────────────
