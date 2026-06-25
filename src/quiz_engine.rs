@@ -34,13 +34,13 @@ pub struct AnswerSubmission {
 	pub selected_option_id: Option<i32>,
 }
 
-/// Full attempt submission payload (POST body).
+// Full attempt submission payload (POST body).
 #[derive(Debug, Clone, Deserialize)]
 pub struct AttemptSubmission {
 	pub answers: Vec<AnswerSubmission>,
 }
 
-/// Result of grading one question.
+// Result of grading one question.
 #[derive(Debug, Clone, Serialize)]
 pub struct GradedAnswer {
 	pub question_id: i32,
@@ -50,7 +50,7 @@ pub struct GradedAnswer {
 	pub topic: Option<String>,
 }
 
-/// Result of grading a whole attempt.
+// Result of grading a whole attempt.
 #[derive(Debug, Clone, Serialize)]
 pub struct AttemptResult {
 	pub score: i32,
@@ -59,7 +59,7 @@ pub struct AttemptResult {
 	pub graded: Vec<GradedAnswer>,
 }
 
-/// A recommended piece of course material for a weak topic.
+// A recommended piece of course material for a weak topic.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct MaterialRecommendation {
 	pub material_id: i32,
@@ -69,12 +69,11 @@ pub struct MaterialRecommendation {
 	pub topic: Option<String>,
 }
 
-// ===========================================================================
-// Pure engine logic  (no DB, no HTTP -> fully unit-testable)
-// ===========================================================================
 
-/// Grade a single answer against its question's options.
-/// Quizzes are option-based only (multiple_choice / true_false).
+// Pure engine logic 
+
+// Grade a single answer against its question's options.
+// Quizzes are option-based only (multiple_choice / true_false).
 pub fn grade_answer(question: &EngineQuestion, submission: &AnswerSubmission) -> GradedAnswer {
 	let is_correct = match question.question_type.as_str() {
 		"multiple_choice" | "true_false" => submission
@@ -98,7 +97,7 @@ pub fn grade_answer(question: &EngineQuestion, submission: &AnswerSubmission) ->
 	}
 }
 
-/// Grade an entire attempt. Questions without a matching submission are scored 0.
+// Grade an entire attempt. Questions without a matching submission are scored 0.
 pub fn grade_attempt(
 	questions: &[EngineQuestion],
 	submission: &AttemptSubmission,
@@ -137,17 +136,17 @@ pub fn grade_attempt(
 	}
 }
 
-/// Exponential moving average update of a topic proficiency in 0.0..=1.0.
-/// `alpha` is the learning rate (how much the newest answer moves the estimate).
+// Exponential moving average update of a topic proficiency in 0.0..=1.0.
+// `alpha` is the learning rate (how much the newest answer moves the estimate).
 pub fn update_proficiency(current: f32, was_correct: bool, alpha: f32) -> f32 {
 	let target = if was_correct { 1.0 } else { 0.0 };
 	let next = current + alpha * (target - current);
 	next.clamp(0.0, 1.0)
 }
 
-/// Map a proficiency estimate to the difficulty (1..=5) of the next question.
-/// Weak students get easier questions; strong students get harder ones. The
-/// `streak` (consecutive correct answers, negative for wrong) nudges it.
+// Map a proficiency estimate to the difficulty (1..=5) of the next question.
+// Weak students get easier questions; strong students get harder ones. The
+// `streak` (consecutive correct answers, negative for wrong) nudges it.
 pub fn select_next_difficulty(proficiency: f32, streak: i32) -> i16 {
 	// proficiency 0.0..1.0 -> base band 1..5
 	let base = (proficiency * 4.0).round() as i32 + 1; // 1..=5
@@ -165,11 +164,10 @@ pub fn pick_adaptive_index(pool: &[EngineQuestion], target_difficulty: i16) -> O
 		.map(|(i, _)| i)
 }
 
-// ===========================================================================
-// DB access
-// ===========================================================================
 
-/// Resolve the students.id for the logged-in user, or None if not a student row.
+// DB access
+
+// Resolve the students.id for the logged-in user, or None if not a student row.
 async fn student_id_for_user(db: &PgPool, user_id: i32) -> Result<Option<i32>, sqlx::Error> {
 	sqlx::query_scalar::<_, i32>("SELECT id FROM students WHERE user_id = $1 LIMIT 1")
 		.bind(user_id)
@@ -177,7 +175,7 @@ async fn student_id_for_user(db: &PgPool, user_id: i32) -> Result<Option<i32>, s
 		.await
 }
 
-/// Load all questions (with options) for a quiz.
+// Load all questions (with options) for a quiz.
 pub async fn load_questions(db: &PgPool, quiz_id: i32) -> Result<Vec<EngineQuestion>, sqlx::Error> {
 	#[derive(FromRow)]
 	struct QRow {
@@ -224,8 +222,8 @@ pub async fn load_questions(db: &PgPool, quiz_id: i32) -> Result<Vec<EngineQuest
 	Ok(questions)
 }
 
-/// Persist a graded attempt: create the attempt row, store each answer, set the
-/// final score, and update topic proficiencies. Returns the new attempt id.
+// Persist a graded attempt: create the attempt row, store each answer, set the
+// final score, and update topic proficiencies. Returns the new attempt id.
 pub async fn persist_attempt(
 	db: &PgPool,
 	quiz_id: i32,
@@ -298,7 +296,7 @@ pub async fn persist_attempt(
 	Ok(attempt_id)
 }
 
-/// Recommend course materials for the student's weakest topics in a course.
+// Recommend course materials for the student's weakest topics in a course.
 pub async fn recommend_materials(
 	db: &PgPool,
 	student_id: i32,
@@ -330,7 +328,7 @@ pub async fn recommend_materials(
 	.await
 }
 
-/// Look up the course a quiz belongs to.
+// Look up the course a quiz belongs to.
 async fn course_id_for_quiz(db: &PgPool, quiz_id: i32) -> Result<Option<i32>, sqlx::Error> {
 	sqlx::query_scalar::<_, i32>("SELECT course_id FROM quizzes WHERE id = $1")
 		.bind(quiz_id)
@@ -338,8 +336,8 @@ async fn course_id_for_quiz(db: &PgPool, quiz_id: i32) -> Result<Option<i32>, sq
 		.await
 }
 
-/// Timing/limit info for one quiz. The open/close checks are computed in SQL
-/// (`NOW()`) so we don't need a Rust timestamp type to compare them.
+// Timing/limit info for one quiz. The open/close checks are computed in SQL
+// (`NOW()`) so we don't need a Rust timestamp type to compare them.
 #[derive(FromRow)]
 struct QuizGate {
 	is_before_open: bool,
@@ -347,7 +345,7 @@ struct QuizGate {
 	attempts_allowed: i32,
 }
 
-/// Fetch the attempt window + allowed-attempt count for a quiz.
+// Fetch the attempt window + allowed-attempt count for a quiz.
 async fn quiz_gate(db: &PgPool, quiz_id: i32) -> Result<Option<QuizGate>, sqlx::Error> {
 	sqlx::query_as::<_, QuizGate>(
 		r#"SELECT (NOW() < open_at) AS is_before_open,
@@ -361,7 +359,7 @@ async fn quiz_gate(db: &PgPool, quiz_id: i32) -> Result<Option<QuizGate>, sqlx::
 	.await
 }
 
-/// Count how many attempts this student has already made on this quiz.
+// Count how many attempts this student has already made on this quiz.
 async fn count_attempts(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<i64, sqlx::Error> {
 	sqlx::query_scalar::<_, i64>(
 		"SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2",
@@ -372,9 +370,7 @@ async fn count_attempts(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<i6
 	.await
 }
 
-// ===========================================================================
 // HTTP handlers
-// ===========================================================================
 
 #[derive(Serialize)]
 struct SubmitResponse {
@@ -383,9 +379,9 @@ struct SubmitResponse {
 	recommendations: Vec<MaterialRecommendation>,
 }
 
-/// POST /student/quizzes/{quiz_id}/submit
-/// Grades the submitted answers, persists the attempt, updates proficiency,
-/// and returns the score plus material recommendations for weak topics.
+// POST /student/quizzes/{quiz_id}/submit
+// Grades the submitted answers, persists the attempt, updates proficiency,
+// and returns the score plus material recommendations for weak topics.
 pub async fn submit_quiz_attempt(
 	path: web::Path<i32>,
 	db: web::Data<PgPool>,
@@ -466,16 +462,13 @@ pub async fn submit_quiz_attempt(
 
 #[derive(Deserialize)]
 pub struct NextQuestionQuery {
-	/// Question ids already answered this session (comma-separated), so they
-	/// are excluded from the adaptive pool.
 	pub answered: Option<String>,
-	/// Consecutive-correct streak this session (negative = recent wrongs).
 	pub streak: Option<i32>,
 }
 
-/// GET /student/quizzes/{quiz_id}/next?answered=1,2&streak=1
-/// Returns the next adaptive question (answer key stripped) based on the
-/// student's proficiency in this course and their current streak.
+// GET /student/quizzes/{quiz_id}/next?answered=1,2&streak=1
+// Returns the next adaptive question (answer key stripped) based on the
+// student's proficiency in this course and their current streak.
 pub async fn next_adaptive_question(
 	path: web::Path<i32>,
 	query: web::Query<NextQuestionQuery>,
@@ -543,7 +536,7 @@ pub async fn next_adaptive_question(
 	}
 }
 
-/// GET /student/quizzes/{quiz_id}/recommendations
+// GET /student/quizzes/{quiz_id}/recommendations
 pub async fn quiz_recommendations(
 	path: web::Path<i32>,
 	db: web::Data<PgPool>,
@@ -572,7 +565,7 @@ pub async fn quiz_recommendations(
 	}
 }
 
-/// Register engine routes. Call `.configure(quiz_engine::config)` in main.rs.
+// Register engine routes. Call `.configure(quiz_engine::config)` in main.rs.
 pub fn config(cfg: &mut web::ServiceConfig) {
 	cfg.route(
 		"/student/quizzes/{quiz_id}/submit",
@@ -588,9 +581,8 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 	);
 }
 
-// ===========================================================================
+
 // Unit tests for the pure logic
-// ===========================================================================
 #[cfg(test)]
 mod tests {
 	use super::*;
