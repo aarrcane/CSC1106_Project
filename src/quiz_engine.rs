@@ -582,7 +582,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 }
 
 
-// Unit tests for the pure logic
+// Unit tests for the pure logigitggggg
 #[cfg(test)]
 mod tests {
 	use super::*;
