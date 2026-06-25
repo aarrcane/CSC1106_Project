@@ -1,0 +1,122 @@
+{% extends "base_lecturer.html" %}
+
+{% block title %}Attendance Overview - Lecturer{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+    <div>
+      <h4 class="fw-bold mb-0">Attendance Overview</h4>
+      <p class="text-muted small mb-0">Review attendance performance across your assigned courses.</p>
+    </div>
+    <a class="btn btn-primary" href="/lecturer/attendance/sessions">
+      <i class="bi bi-broadcast me-1"></i>Manage Sessions
+    </a>
+  </div>
+
+  {% if attendance_success is defined %}
+  <div class="alert alert-success border-0 shadow-sm">{{ attendance_success }}</div>
+  {% endif %}
+  {% if attendance_error is defined %}
+  <div class="alert alert-danger border-0 shadow-sm">{{ attendance_error }}</div>
+  {% endif %}
+
+  {% if course_overviews | length > 0 %}
+  <div class="row g-4">
+    {% for course in course_overviews %}
+    <div class="col-xl-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-header bg-white border-bottom d-flex align-items-start justify-content-between gap-3">
+          <div>
+            <span class="badge bg-primary-subtle text-primary mb-2">{{ course.course_code }}</span>
+            <h5 class="fw-bold mb-1">{{ course.course_name }}</h5>
+            <div class="small text-muted">{{ course.enrolled_count }} enrolled students</div>
+          </div>
+          <div class="text-end">
+            <div class="small text-muted">Attendance Rate</div>
+            <div class="fs-3 fw-bold {% if course.attendance_pct >= 80 %}text-success{% elif course.attendance_pct >= 60 %}text-warning{% else %}text-danger{% endif %}">
+              {{ course.attendance_pct }}%
+            </div>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="row g-3 mb-3">
+            <div class="col-6 col-md-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Sessions</div>
+                <div class="fw-bold">{{ course.total_sessions }}</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Present</div>
+                <div class="fw-bold text-success">{{ course.present_count }}</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Late</div>
+                <div class="fw-bold text-warning">{{ course.late_count }}</div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Absent</div>
+                <div class="fw-bold text-danger">{{ course.absent_count }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+            <div>
+              <div class="small text-muted">Latest Session</div>
+              {% if course.latest_session_title %}
+              <div class="fw-semibold">{{ course.latest_session_title }}</div>
+              <div class="small text-muted">
+                {% if course.latest_session_status == "open" %}
+                <span class="badge bg-success me-1">Open</span>
+                {% else %}
+                <span class="badge bg-secondary me-1">Closed</span>
+                {% endif %}
+                <span data-local-time="{{ course.latest_session_opened_at }}">{{ course.latest_session_opened_at }}</span>
+              </div>
+              {% else %}
+              <div class="fw-semibold text-muted">No sessions yet</div>
+              {% endif %}
+            </div>
+            <a class="btn btn-outline-primary btn-sm" href="/lecturer/attendance/sessions">
+              Manage Sessions
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-calendar-check fs-1 d-block mb-2 opacity-25"></i>
+      No assigned courses found.
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  document.querySelectorAll('[data-local-time]').forEach((element) => {
+    const value = element.dataset.localTime;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      element.textContent = date.toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      });
+      element.title = value;
+    }
+  });
+</script>
+{% endblock %}
