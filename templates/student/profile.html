@@ -1,0 +1,70 @@
+{% extends "base_student.html" %}
+
+{% block title %}Profile - Student{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h4>Profile</h4>
+    <p>View your student account and academic details.</p>
+  </div>
+</div>
+
+<div class="course-stats-bar">
+  <div class="course-stat-card primary">
+    <div class="course-stat-value">{{ profile.student_id }}</div>
+    <div class="course-stat-label">Student ID</div>
+  </div>
+  <div class="course-stat-card success">
+    <div class="course-stat-value">{{ profile.enrolled_courses }}</div>
+    <div class="course-stat-label">Enrolled Courses</div>
+  </div>
+  <div class="course-stat-card">
+    <div class="course-stat-value">{% if profile.year_of_study %}{{ profile.year_of_study }}{% else %}-{% endif %}</div>
+    <div class="course-stat-label">Year of Study</div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <h6 class="fw-bold mb-0"><i class="bi bi-person-circle me-2 text-primary"></i>Personal Details</h6>
+      </div>
+      <div class="card-body px-4 py-3">
+        <dl class="row mb-0 g-3">
+          <dt class="col-sm-4 text-muted small">Name</dt>
+          <dd class="col-sm-8 mb-0 fw-semibold">{{ profile.display_name }}</dd>
+          <dt class="col-sm-4 text-muted small">Email</dt>
+          <dd class="col-sm-8 mb-0">{{ profile.email }}</dd>
+          <dt class="col-sm-4 text-muted small">Age</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.age %}{{ profile.age }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-4 text-muted small">Status</dt>
+          <dd class="col-sm-8 mb-0">
+            {% if profile.is_active %}<span class="status-badge status-ongoing">Active</span>{% else %}<span class="status-badge status-archived">Inactive</span>{% endif %}
+          </dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-white border-bottom py-3 px-4">
+        <h6 class="fw-bold mb-0"><i class="bi bi-mortarboard me-2 text-success"></i>Academic Details</h6>
+      </div>
+      <div class="card-body px-4 py-3">
+        <dl class="row mb-0 g-3">
+          <dt class="col-sm-4 text-muted small">Programme</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.programme %}{{ profile.programme }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-4 text-muted small">Year</dt>
+          <dd class="col-sm-8 mb-0">{% if profile.year_of_study %}Year {{ profile.year_of_study }}{% else %}-{% endif %}</dd>
+          <dt class="col-sm-4 text-muted small">Role</dt>
+          <dd class="col-sm-8 mb-0 text-capitalize">{{ profile.role }}</dd>
+          <dt class="col-sm-4 text-muted small">Created</dt>
+          <dd class="col-sm-8 mb-0">{{ profile.created_at }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

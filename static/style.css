@@ -79,6 +79,76 @@ body.lms-body {
   font-family: 'Inter', 'Segoe UI', sans-serif;
 }
 
+html.theme-dark {
+  --lms-body-bg: #0f172a;
+  --color-bg: #0f172a;
+  --color-surface: #111827;
+  --color-surface-2: #1f2937;
+  --color-border: rgba(148,163,184,0.28);
+  --color-divider: #334155;
+  --color-text: #e5e7eb;
+  --color-text-muted: #cbd5e1;
+  --color-text-faint: #94a3b8;
+}
+
+html.theme-dark body.lms-body {
+  color: var(--color-text);
+}
+
+html.theme-dark .card,
+html.theme-dark .card-header,
+html.theme-dark .card-footer,
+html.theme-dark .list-group-item,
+html.theme-dark .dropdown-menu,
+html.theme-dark .modal-content {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text);
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .text-muted {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .bg-white,
+html.theme-dark .bg-light {
+  background-color: var(--color-surface) !important;
+}
+
+html.theme-dark .border,
+html.theme-dark .border-top,
+html.theme-dark .border-bottom {
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .btn-outline-secondary {
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+html.theme-dark .btn-outline-secondary:hover,
+html.theme-dark .btn-check:checked + .btn-outline-secondary {
+  color: #fff;
+  background-color: var(--lms-primary);
+  border-color: var(--lms-primary);
+}
+
+html.theme-dark .form-control,
+html.theme-dark .form-select,
+html.theme-dark .lms-form-input,
+html.theme-dark .lms-form-select,
+html.theme-dark .lms-form-textarea {
+  background-color: var(--color-surface-2);
+  color: var(--color-text);
+  border-color: var(--color-border);
+}
+
+html.theme-dark .table {
+  --bs-table-bg: var(--color-surface);
+  --bs-table-color: var(--color-text);
+  --bs-table-border-color: var(--color-divider);
+}
+
 
 /* ── Navbar ── */
 .lms-navbar {
@@ -739,4 +809,227 @@ body.login-landing {
   .quiz-monitor-card {
     position: static;
   }
+}
+
+/* Dark theme coverage for Bootstrap utilities and page-local components. */
+html.theme-dark .lms-main,
+html.theme-dark .course-search-box,
+html.theme-dark .course-empty-state {
+  background: var(--color-bg) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .card,
+html.theme-dark .card-body,
+html.theme-dark .card-header,
+html.theme-dark .card-footer,
+html.theme-dark .modal-header,
+html.theme-dark .modal-body,
+html.theme-dark .modal-footer,
+html.theme-dark .list-group,
+html.theme-dark .list-group-item,
+html.theme-dark .dropdown-menu,
+html.theme-dark .dropdown-item,
+html.theme-dark .accordion-item,
+html.theme-dark .accordion-button,
+html.theme-dark .course-mgmt-card,
+html.theme-dark .course-mgmt-card-header,
+html.theme-dark .week-card,
+html.theme-dark .week-card-header,
+html.theme-dark .asg-card,
+html.theme-dark .asg-card-header,
+html.theme-dark .forum-thread-card,
+html.theme-dark .post-card,
+html.theme-dark .monitor-status-tile,
+html.theme-dark .quiz-monitor-log,
+html.theme-dark .quiz-locked-panel,
+html.theme-dark .quiz-option {
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark [style*="background:#fff"],
+html.theme-dark [style*="background: #fff"],
+html.theme-dark [style*="background-color:#fff"],
+html.theme-dark [style*="background-color: #fff"] {
+  background: var(--color-surface) !important;
+  background-color: var(--color-surface) !important;
+}
+
+html.theme-dark [style*="background:#f8fafc"],
+html.theme-dark [style*="background: #f8fafc"],
+html.theme-dark [style*="background:#f9fafb"],
+html.theme-dark [style*="background: #f9fafb"],
+html.theme-dark [style*="background:#f3f4f6"],
+html.theme-dark [style*="background: #f3f4f6"] {
+  background: var(--color-surface-2) !important;
+  background-color: var(--color-surface-2) !important;
+}
+
+html.theme-dark [style*="color:#111827"],
+html.theme-dark [style*="color: #111827"],
+html.theme-dark [style*="color:#1e293b"],
+html.theme-dark [style*="color: #1e293b"],
+html.theme-dark [style*="color:#0f172a"],
+html.theme-dark [style*="color: #0f172a"] {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark [style*="color:#6b7280"],
+html.theme-dark [style*="color: #6b7280"],
+html.theme-dark [style*="color:#64748b"],
+html.theme-dark [style*="color: #64748b"],
+html.theme-dark [style*="color:#374151"],
+html.theme-dark [style*="color: #374151"] {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark [style*="border-bottom:1px solid #e5e7eb"],
+html.theme-dark [style*="border-top:1px solid #e5e7eb"],
+html.theme-dark [style*="border:1px solid #e2e8f0"],
+html.theme-dark [style*="border: 1px solid #e2e8f0"],
+html.theme-dark [style*="border-color: #cbd5e1"],
+html.theme-dark [style*="border-color:#cbd5e1"] {
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .table,
+html.theme-dark .table > :not(caption) > * > * {
+  --bs-table-bg: var(--color-surface);
+  --bs-table-color: var(--color-text);
+  --bs-table-border-color: var(--color-divider);
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .table-hover > tbody > tr:hover > * {
+  --bs-table-bg-state: var(--color-surface-2);
+  color: var(--color-text) !important;
+  background-color: var(--color-surface-2) !important;
+}
+
+html.theme-dark .text-dark,
+html.theme-dark .text-body,
+html.theme-dark .text-secondary,
+html.theme-dark .fw-semibold,
+html.theme-dark .course-title,
+html.theme-dark .asg-title,
+html.theme-dark .week-title,
+html.theme-dark .forum-thread-title {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .text-muted,
+html.theme-dark .stat-label,
+html.theme-dark .course-meta,
+html.theme-dark .asg-meta,
+html.theme-dark .week-meta,
+html.theme-dark .small {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .bg-white,
+html.theme-dark .bg-light,
+html.theme-dark .badge.bg-light,
+html.theme-dark .bg-body,
+html.theme-dark .input-group-text {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .bg-dark-subtle,
+html.theme-dark .badge.bg-dark-subtle {
+  background-color: #334155 !important;
+  color: #e5e7eb !important;
+  border-color: #475569 !important;
+}
+
+html.theme-dark .bg-primary-subtle,
+html.theme-dark .badge.bg-primary-subtle {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+html.theme-dark .bg-success-subtle,
+html.theme-dark .badge.bg-success-subtle {
+  background-color: rgba(22, 163, 74, 0.18) !important;
+  color: #86efac !important;
+}
+
+html.theme-dark .bg-warning-subtle,
+html.theme-dark .badge.bg-warning-subtle,
+html.theme-dark .badge.bg-warning {
+  background-color: rgba(217, 119, 6, 0.2) !important;
+  color: #fde68a !important;
+}
+
+html.theme-dark .bg-danger-subtle,
+html.theme-dark .badge.bg-danger-subtle {
+  background-color: rgba(220, 38, 38, 0.2) !important;
+  color: #fca5a5 !important;
+}
+
+html.theme-dark .bg-info-subtle,
+html.theme-dark .badge.bg-info-subtle {
+  background-color: rgba(14, 165, 233, 0.18) !important;
+  color: #7dd3fc !important;
+}
+
+html.theme-dark .form-control,
+html.theme-dark .form-select,
+html.theme-dark .form-check-input,
+html.theme-dark textarea,
+html.theme-dark input,
+html.theme-dark select {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .form-control::placeholder,
+html.theme-dark input::placeholder,
+html.theme-dark textarea::placeholder {
+  color: var(--color-text-faint) !important;
+}
+
+html.theme-dark .btn-outline-dark,
+html.theme-dark .btn-outline-secondary {
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .btn-outline-dark:hover,
+html.theme-dark .btn-outline-secondary:hover {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .alert-success {
+  background-color: rgba(22, 163, 74, 0.18) !important;
+  color: #bbf7d0 !important;
+}
+
+html.theme-dark .alert-danger {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+  color: #fecaca !important;
+}
+
+html.theme-dark .alert-warning {
+  background-color: rgba(217, 119, 6, 0.18) !important;
+  color: #fde68a !important;
+}
+
+html.theme-dark .dropdown-item:hover,
+html.theme-dark .dropdown-item:focus,
+html.theme-dark .accordion-button:not(.collapsed),
+html.theme-dark .quiz-option:hover {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .modal-backdrop {
+  --bs-backdrop-opacity: 0.7;
 }

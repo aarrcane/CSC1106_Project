@@ -1,0 +1,304 @@
+/* Loaded after page-specific styles so dark mode wins consistently. */
+html.theme-dark,
+html.theme-dark body,
+html.theme-dark body.lms-body {
+  background: var(--color-bg) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .lms-main,
+html.theme-dark .container,
+html.theme-dark .container-fluid,
+html.theme-dark .course-search-box,
+html.theme-dark .course-empty-state {
+  background: var(--color-bg) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .card,
+html.theme-dark .card-body,
+html.theme-dark .card-header,
+html.theme-dark .card-footer,
+html.theme-dark .modal-content,
+html.theme-dark .modal-header,
+html.theme-dark .modal-body,
+html.theme-dark .modal-footer,
+html.theme-dark .list-group,
+html.theme-dark .list-group-item,
+html.theme-dark .dropdown-menu,
+html.theme-dark .dropdown-item,
+html.theme-dark .accordion-item,
+html.theme-dark .accordion-button,
+html.theme-dark .input-group-text,
+html.theme-dark .course-mgmt-card,
+html.theme-dark .course-mgmt-card-header,
+html.theme-dark .week-card,
+html.theme-dark .week-card-header,
+html.theme-dark .week-card-content,
+html.theme-dark .asg-card,
+html.theme-dark .asg-card-header,
+html.theme-dark .asg-card-body,
+html.theme-dark .submission-card,
+html.theme-dark .forum-thread-card,
+html.theme-dark .post-card,
+html.theme-dark .monitor-status-tile,
+html.theme-dark .quiz-monitor-log,
+html.theme-dark .quiz-locked-panel,
+html.theme-dark .quiz-option,
+html.theme-dark .drop-zone,
+html.theme-dark .file-row {
+  background: var(--color-surface) !important;
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark [style*="background:#fff"],
+html.theme-dark [style*="background: #fff"],
+html.theme-dark [style*="background-color:#fff"],
+html.theme-dark [style*="background-color: #fff"],
+html.theme-dark [style*="background:white"],
+html.theme-dark [style*="background: white"] {
+  background: var(--color-surface) !important;
+  background-color: var(--color-surface) !important;
+}
+
+html.theme-dark [style*="background:#f8fafc"],
+html.theme-dark [style*="background: #f8fafc"],
+html.theme-dark [style*="background:#f9fafb"],
+html.theme-dark [style*="background: #f9fafb"],
+html.theme-dark [style*="background:#f3f4f6"],
+html.theme-dark [style*="background: #f3f4f6"],
+html.theme-dark [style*="background:#eff6ff"],
+html.theme-dark [style*="background: #eff6ff"],
+html.theme-dark [style*="background:#f0fdf4"],
+html.theme-dark [style*="background: #f0fdf4"],
+html.theme-dark [style*="background:#fef2f2"],
+html.theme-dark [style*="background: #fef2f2"] {
+  background: var(--color-surface-2) !important;
+  background-color: var(--color-surface-2) !important;
+}
+
+html.theme-dark [style*="color:#111827"],
+html.theme-dark [style*="color: #111827"],
+html.theme-dark [style*="color:#1e293b"],
+html.theme-dark [style*="color: #1e293b"],
+html.theme-dark [style*="color:#0f172a"],
+html.theme-dark [style*="color: #0f172a"],
+html.theme-dark [style*="color:#374151"],
+html.theme-dark [style*="color: #374151"] {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark [style*="color:#6b7280"],
+html.theme-dark [style*="color: #6b7280"],
+html.theme-dark [style*="color:#64748b"],
+html.theme-dark [style*="color: #64748b"],
+html.theme-dark [style*="color:#475569"],
+html.theme-dark [style*="color: #475569"],
+html.theme-dark [style*="color:#9ca3af"],
+html.theme-dark [style*="color: #9ca3af"] {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark [style*="border-bottom:1px solid #e5e7eb"],
+html.theme-dark [style*="border-bottom: 1px solid #e5e7eb"],
+html.theme-dark [style*="border-top:1px solid #e5e7eb"],
+html.theme-dark [style*="border-top: 1px solid #e5e7eb"],
+html.theme-dark [style*="border:1px solid #e2e8f0"],
+html.theme-dark [style*="border: 1px solid #e2e8f0"],
+html.theme-dark [style*="border-color:#cbd5e1"],
+html.theme-dark [style*="border-color: #cbd5e1"] {
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .table,
+html.theme-dark .table > :not(caption) > * > * {
+  --bs-table-bg: var(--color-surface);
+  --bs-table-color: var(--color-text);
+  --bs-table-border-color: var(--color-divider);
+  background-color: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .table-hover > tbody > tr:hover > * {
+  --bs-table-bg-state: var(--color-surface-2);
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .text-dark,
+html.theme-dark .text-body,
+html.theme-dark .text-secondary,
+html.theme-dark .fw-semibold,
+html.theme-dark h1,
+html.theme-dark h2,
+html.theme-dark h3,
+html.theme-dark h4,
+html.theme-dark h5,
+html.theme-dark h6,
+html.theme-dark .course-title,
+html.theme-dark .asg-title,
+html.theme-dark .week-title,
+html.theme-dark .forum-thread-title {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .text-muted,
+html.theme-dark .stat-label,
+html.theme-dark .course-meta,
+html.theme-dark .asg-meta,
+html.theme-dark .week-meta,
+html.theme-dark .small,
+html.theme-dark small {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .bg-white,
+html.theme-dark .bg-light,
+html.theme-dark .badge.bg-light,
+html.theme-dark .bg-body,
+html.theme-dark .bg-body-tertiary {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .border,
+html.theme-dark .border-top,
+html.theme-dark .border-end,
+html.theme-dark .border-bottom,
+html.theme-dark .border-start {
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .bg-dark-subtle,
+html.theme-dark .badge.bg-dark-subtle {
+  background-color: #334155 !important;
+  color: #e5e7eb !important;
+  border-color: #475569 !important;
+}
+
+html.theme-dark .bg-primary-subtle,
+html.theme-dark .badge.bg-primary-subtle {
+  background-color: rgba(37, 99, 235, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+html.theme-dark .bg-success-subtle,
+html.theme-dark .badge.bg-success-subtle {
+  background-color: rgba(22, 163, 74, 0.18) !important;
+  color: #86efac !important;
+}
+
+html.theme-dark .bg-warning-subtle,
+html.theme-dark .badge.bg-warning-subtle,
+html.theme-dark .badge.bg-warning {
+  background-color: rgba(217, 119, 6, 0.2) !important;
+  color: #fde68a !important;
+}
+
+html.theme-dark .bg-danger-subtle,
+html.theme-dark .badge.bg-danger-subtle {
+  background-color: rgba(220, 38, 38, 0.2) !important;
+  color: #fca5a5 !important;
+}
+
+html.theme-dark .bg-info-subtle,
+html.theme-dark .badge.bg-info-subtle {
+  background-color: rgba(14, 165, 233, 0.18) !important;
+  color: #7dd3fc !important;
+}
+
+html.theme-dark .form-control,
+html.theme-dark .form-select,
+html.theme-dark .form-check-input,
+html.theme-dark .lms-form-input,
+html.theme-dark .lms-form-select,
+html.theme-dark .lms-form-textarea,
+html.theme-dark textarea,
+html.theme-dark input,
+html.theme-dark select {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .form-control::placeholder,
+html.theme-dark input::placeholder,
+html.theme-dark textarea::placeholder {
+  color: var(--color-text-faint) !important;
+}
+
+html.theme-dark .btn-outline-dark,
+html.theme-dark .btn-outline-secondary {
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .btn-outline-dark:hover,
+html.theme-dark .btn-outline-secondary:hover,
+html.theme-dark .dropdown-item:hover,
+html.theme-dark .dropdown-item:focus,
+html.theme-dark .accordion-button:not(.collapsed),
+html.theme-dark .quiz-option:hover,
+html.theme-dark .drop-zone:hover,
+html.theme-dark .drop-zone.drag-over {
+  background-color: var(--color-surface-2) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .alert-success {
+  background-color: rgba(22, 163, 74, 0.18) !important;
+  color: #bbf7d0 !important;
+}
+
+html.theme-dark .alert-danger {
+  background-color: rgba(220, 38, 38, 0.18) !important;
+  color: #fecaca !important;
+}
+
+html.theme-dark .alert-warning {
+  background-color: rgba(217, 119, 6, 0.18) !important;
+  color: #fde68a !important;
+}
+
+html.theme-dark .modal-backdrop {
+  --bs-backdrop-opacity: 0.7;
+}
+
+html.theme-dark .login-landing,
+html.theme-dark .login-landing .hero-section {
+  background: linear-gradient(180deg, #0f172a 0%, #111827 56%, #172033 100%) !important;
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .login-landing h1,
+html.theme-dark .login-landing h2,
+html.theme-dark .login-landing .card-body {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .login-landing .lead,
+html.theme-dark .login-landing .form-label {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .login-landing .icon-circle.student-icon,
+html.theme-dark .login-landing .student-icon {
+  background: rgba(37, 99, 235, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+html.theme-dark .login-landing .icon-circle.lecturer-icon,
+html.theme-dark .login-landing .lecturer-icon {
+  background: rgba(16, 185, 129, 0.16) !important;
+  color: #86efac !important;
+}
+
+html.theme-dark .login-landing .icon-circle.admin-icon,
+html.theme-dark .login-landing .admin-icon {
+  background: rgba(245, 158, 11, 0.18) !important;
+  color: #fde68a !important;
+}

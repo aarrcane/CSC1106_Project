@@ -2,249 +2,938 @@
 
 {% block title %}Assignments – LMS Portal{% endblock %}
 
-{#
-  Context required:
-    - student_name, student_id, notifications, active_page (= "assignments")
-    - courses:     Vec<CourseContext>
-    - assignments: Vec<AssignmentContext>
-        fields: id, title, course_code, course_name, item_type ("assignment"|"quiz"),
-                due_date, status ("pending"|"submitted"|"late"|"graded"),
-                score (Option<String> e.g. "85 / 100"), urgent (bool)
-#}
+{% block extra_css %}
+<style>
+  /* ── Modal (same as lecturer, narrower) ── */
+  .lms-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 1rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 200ms ease;
+  }
+
+  .lms-modal-overlay.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .lms-modal {
+    background: #fff;
+    border-radius: 0.75rem;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    flex-direction: column;
+    max-height: 90dvh;
+    overflow: hidden;
+    transform: translateY(12px);
+    transition: transform 200ms ease;
+  }
+
+  .lms-modal-overlay.open .lms-modal {
+    transform: translateY(0);
+  }
+
+  .lms-modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .lms-modal-header h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .lms-modal-body {
+    padding: 1.5rem;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .lms-modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  /* ── Course stats bar (reuse lecturer style) ── */
+  .course-stats-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+  }
+
+  .course-stat-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.625rem;
+    padding: 0.75rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .course-stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+    line-height: 1;
+  }
+
+  .course-stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #6b7280;
+  }
+
+  .course-stat-card.primary .course-stat-value {
+    color: #2563eb;
+  }
+
+  .course-stat-card.warning .course-stat-value {
+    color: #d97706;
+  }
+
+  /* ── Toolbar (align with lecturer) ── */
+  .course-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .course-search-box {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    flex: 1;
+    min-width: 220px;
+    max-width: 360px;
+  }
+
+  .course-search-box input {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-size: 0.875rem;
+    width: 100%;
+  }
+
+  /* ── Course card (student) ── */
+  .course-mgmt-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .course-card-item {
+    width: 100%;
+  }
+
+  .course-mgmt-card {
+    background: #fff;
+    border-radius: 0.625rem 0.625rem 0 0;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+  }
+
+  .course-mgmt-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+  }
+
+  .course-accent-bar {
+    width: 3px;
+    border-radius: 2px;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  .course-code {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6b7280;
+  }
+
+  .course-mgmt-card-body {
+    padding: 0.65rem 1rem;
+  }
+
+  .course-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.78rem;
+    color: #6b7280;
+  }
+
+  .course-meta-item {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+
+  .course-mgmt-card-footer {
+    padding: 0.55rem 1rem 0.75rem;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* ── Assignment panel / grid / cards (same as lecturer, slightly tweaked) ── */
+  .asg-panel {
+    display: none;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-top: none;
+    border-radius: 0 0 0.625rem 0.625rem;
+    background: #f9fafb;
+    padding: 0.75rem;
+  }
+
+  .asg-panel.open {
+    display: block;
+  }
+
+  .asg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .asg-card {
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.625rem;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: box-shadow 180ms ease, transform 180ms ease;
+  }
+
+  .asg-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+  }
+
+  .asg-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    padding: 0.75rem 0.875rem;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .asg-accent {
+    width: 3px;
+    border-radius: 2px;
+    align-self: stretch;
+    flex-shrink: 0;
+  }
+
+  .asg-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.3;
+  }
+
+  .asg-desc {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.2rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .asg-card-body {
+    padding: 0.6rem 0.875rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .asg-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.78rem;
+    color: #6b7280;
+  }
+
+  .asg-card-footer {
+    padding: 0.5rem 0.875rem;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  /* ── Tags (reuse lecturer look, but for student Pending/Overdue) ── */
+  .tag-overdue {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    background: #fef2f2;
+    color: #dc2626;
+    border-radius: 999px;
+    padding: 1px 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .tag-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    background: #f3f4f6;
+    color: #374151;
+    border-radius: 999px;
+    padding: 1px 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .file-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: #eff6ff;
+    color: #2563eb;
+    border-radius: 999px;
+    padding: 2px 0.625rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .panel-week-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-top: 0.75rem;
+  }
+
+  .panel-week-header:first-child {
+    margin-top: 0;
+  }
+
+  .week-badge {
+    background: #2563eb;
+    color: #fff;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 0.1rem 0.55rem;
+    border-radius: 999px;
+  }
+
+  .panel-week-label {
+    font-size: 0.775rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .panel-empty {
+    text-align: center;
+    padding: 1.25rem 1rem;
+    color: #6b7280;
+    font-size: 0.875rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ── Drop zone / file chip (same as lecturer) ── */
+  .drop-zone {
+    border: 2px dashed #93c5fd;
+    border-radius: 0.625rem;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    background: #eff6ff;
+    transition: background 150ms, border-color 150ms;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .drop-zone:hover,
+  .drop-zone.drag-over {
+    background: #dbeafe;
+    border-color: #3b82f6;
+  }
+
+  .drop-zone p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #111827;
+  }
+
+  .drop-zone span {
+    font-size: 0.75rem;
+    color: #6b7280;
+  }
+
+  .file-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #f8fafc;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .file-chip .chip-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* ── Buttons / chevron / toast (reuse patterns) ── */
+  .btn-lms {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    padding: 0.375rem 0.75rem;
+    border: none;
+    cursor: pointer;
+    transition: background 150ms, color 150ms, box-shadow 150ms;
+  }
+
+  .btn-lms-primary {
+    background: #2563eb;
+    color: #fff;
+  }
+
+  .btn-lms-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-lms-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .btn-lms-secondary:hover {
+    background: #e5e7eb;
+  }
+
+  .btn-lms-ghost {
+    background: transparent;
+    color: #6b7280;
+  }
+
+  .btn-lms-ghost:hover {
+    background: #f3f4f6;
+  }
+
+  .btn-lms-icon {
+    padding: 0.35rem;
+    border-radius: 0.375rem;
+  }
+
+  .btn-lms-sm {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.775rem;
+  }
+
+  .chevron-icon {
+    transition: transform 200ms ease;
+  }
+
+  .chevron-icon.rotated {
+    transform: rotate(180deg);
+  }
+
+  .lms-toast-container {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    z-index: 300;
+  }
+
+  .lms-toast {
+    background: #1a1d2e;
+    color: #fff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transform: translateX(120%);
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    min-width: 260px;
+  }
+
+  .lms-toast.show {
+    transform: translateX(0);
+  }
+
+  .lms-toast.success {
+    background: #16a34a;
+  }
+
+  .lms-toast.error {
+    background: #dc2626;
+  }
+</style>
+{% endblock %}
 
 {% block content %}
 
-  <!-- Page Header -->
-  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
-    <div>
-      <h4 class="fw-bold mb-0">Assignments &amp; Quizzes</h4>
-      <p class="text-muted small mb-0">Track your pending and completed work</p>
-    </div>
+<div class="page-header">
+  <div class="page-header-left">
+    <h4>Assignments</h4>
+    <p>View your assignments for each course and submit your work.</p>
   </div>
+</div>
 
-  <div class="card border-0 shadow-sm mb-4">
+<!-- Stats Bar -->
+<div class="course-stats-bar" role="region" aria-label="Assignment statistics">
+  <div class="course-stat-card primary">
+    <div class="course-stat-value">{{ total_courses }}</div>
+    <div class="course-stat-label">Enrolled Courses</div>
+  </div>
+  <div class="course-stat-card warning">
+    <div class="course-stat-value">{{ total_assignments }}</div>
+    <div class="course-stat-label">Total Assignments</div>
+  </div>
+</div>
 
-    <!-- Status tabs + course filter -->
-    <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4 flex-wrap gap-3">
-      <ul class="nav nav-tabs lms-course-tabs mb-0 border-0" id="assignTabs">
-        <li class="nav-item">
-          <a class="nav-link active" data-bs-toggle="tab" href="#tab-all-assign">All</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" data-bs-toggle="tab" href="#tab-pending">Pending</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" data-bs-toggle="tab" href="#tab-submitted">Submitted</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" data-bs-toggle="tab" href="#tab-graded">Graded</a>
-        </li>
-      </ul>
-      <select class="form-select form-select-sm w-auto" id="courseFilter">
-        <option value="all">All Courses</option>
-        {% for course in courses %}
-        <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
+<!-- Toolbar (search only for students) -->
+<div class="course-toolbar" role="search">
+  <div class="course-search-box">
+    <i data-lucide="search" width="15" height="15" style="color:#9ca3af;flex-shrink:0"></i>
+    <input type="search" id="searchInput" placeholder="Search courses by name or code" aria-label="Search courses"
+      oninput="filterCourses()" />
+  </div>
+  <span style="flex:1"></span>
+</div>
 
-    <div class="card-body p-0">
-      <div class="tab-content">
+<!-- Course Grid -->
+<div class="course-mgmt-grid" id="courseGrid" role="list">
+  {% for course in courses %}
+  <div class="course-card-item" data-name="{{ course.name | lower }}" data-code="{{ course.code | lower }}"
+    role="listitem">
 
-        <!-- ── All ── -->
-        <div class="tab-pane fade show active" id="tab-all-assign">
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th class="px-4 py-3">Title</th>
-                  <th>Course</th>
-                  <th>Type</th>
-                  <th>Due Date</th>
-                  <th>Status</th>
-                  <th>Score</th>
-                </tr>
-              </thead>
-              <tbody id="allTableBody">
-                {% for item in assignments %}
-                <tr class="assign-row" data-course="{{ item.course_code }}">
-                  <td class="px-4">
-                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">
-                      {{ item.title }}
-                    </a>
-                    {% if item.urgent %}
-                    <span class="badge bg-danger ms-2" style="font-size:0.65rem;">Due Soon</span>
-                    {% endif %}
-                  </td>
-                  <td>
-                    <span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span>
-                  </td>
-                  <td>
-                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
-                      <i class="bi {% if item.item_type == 'quiz' %}bi-patch-question{% else %}bi-file-earmark-text{% endif %} me-1"></i>
-                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
-                    </span>
-                  </td>
-                  <td class="small text-muted">{{ item.due_date }}</td>
-                  <td>
-                    {% if item.status == "graded" %}
-                      <span class="badge bg-success rounded-pill">Graded</span>
-                    {% elif item.status == "submitted" %}
-                      <span class="badge bg-primary rounded-pill">Submitted</span>
-                    {% elif item.status == "late" %}
-                      <span class="badge bg-warning text-dark rounded-pill">Late</span>
-                    {% else %}
-                      <span class="badge bg-secondary rounded-pill">Pending</span>
-                    {% endif %}
-                  </td>
-                  <td class="small fw-semibold">
-                    {% if item.score %}{{ item.score }}{% else %}<span class="text-muted">—</span>{% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-                {% if assignments | length == 0 %}
-                <tr>
-                  <td colspan="6" class="text-center text-muted py-5">
-                    <i class="bi bi-file-earmark-check fs-1 d-block mb-2 opacity-25"></i>
-                    No assignments yet.
-                  </td>
-                </tr>
-                {% endif %}
-              </tbody>
-            </table>
-          </div>
+    <article class="course-mgmt-card">
+      <div class="course-mgmt-card-header">
+        <div class="course-accent-bar" style="background:#2563eb"></div>
+        <div style="flex:1;min-width:0">
+          <div class="course-code">{{ course.code }}</div>
+          <div style="font-size:0.93rem;font-weight:600;color:#111827;
+                      margin-top:2px;line-height:1.3">{{ course.name }}</div>
         </div>
+      </div>
 
-        <!-- ── Pending / Late ── -->
-        <div class="tab-pane fade" id="tab-pending">
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th class="px-4 py-3">Title</th>
-                  <th>Course</th>
-                  <th>Type</th>
-                  <th>Due Date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in assignments %}
-                {% if item.status == "pending" or item.status == "late" %}
-                <tr>
-                  <td class="px-4">
-                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">
-                      {{ item.title }}
-                    </a>
-                    {% if item.urgent %}
-                    <span class="badge bg-danger ms-2" style="font-size:0.65rem;">Due Soon</span>
-                    {% endif %}
-                  </td>
-                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
-                  <td>
-                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
-                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
-                    </span>
-                  </td>
-                  <td class="small text-muted">{{ item.due_date }}</td>
-                  <td>
-                    {% if item.status == "late" %}
-                      <span class="badge bg-warning text-dark rounded-pill">Late</span>
-                    {% else %}
-                      <span class="badge bg-secondary rounded-pill">Pending</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+      <div class="course-mgmt-card-body">
+        <div class="course-meta-row">
+          <span class="course-meta-item">
+            <i data-lucide="calendar" width="12" height="12"></i>
+            {{ course.trimester }}
+          </span>
+          <span class="course-meta-item">
+            <i data-lucide="file-text" width="12" height="12"></i>
+            {{ course.assignment_count }} assignment{% if course.assignment_count != 1 %}s{% endif %}
+          </span>
         </div>
+      </div>
 
-        <!-- ── Submitted ── -->
-        <div class="tab-pane fade" id="tab-submitted">
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th class="px-4 py-3">Title</th>
-                  <th>Course</th>
-                  <th>Type</th>
-                  <th>Due Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in assignments %}
-                {% if item.status == "submitted" %}
-                <tr>
-                  <td class="px-4">
-                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">{{ item.title }}</a>
-                  </td>
-                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
-                  <td>
-                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
-                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
-                    </span>
-                  </td>
-                  <td class="small text-muted">{{ item.due_date }}</td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
+      <div class="course-mgmt-card-footer">
+        <button type="button" class="btn-lms btn-lms-secondary btn-lms-sm" id="toggle-btn-{{ course.id }}"
+          onclick="togglePanel({{ course.id }})">
+          <i data-lucide="chevron-down" width="13" height="13" class="chevron-icon" id="chevron-{{ course.id }}"></i>
+          <span id="toggle-label-{{ course.id }}">View Assignments</span>
+        </button>
+      </div>
+    </article>
 
-        <!-- ── Graded ── -->
-        <div class="tab-pane fade" id="tab-graded">
-          <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-              <thead class="table-light">
-                <tr>
-                  <th class="px-4 py-3">Title</th>
-                  <th>Course</th>
-                  <th>Type</th>
-                  <th>Score</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for item in assignments %}
-                {% if item.status == "graded" %}
-                <tr>
-                  <td class="px-4">
-                    <a href="/student/assignments/{{ item.id }}" class="fw-semibold text-decoration-none text-dark">{{ item.title }}</a>
-                  </td>
-                  <td><span class="badge bg-primary-subtle text-primary fw-semibold">{{ item.course_code }}</span></td>
-                  <td>
-                    <span class="badge rounded-pill {% if item.item_type == 'quiz' %}bg-info-subtle text-info{% else %}bg-secondary-subtle text-secondary{% endif %}">
-                      {% if item.item_type == 'quiz' %}Quiz{% else %}Assignment{% endif %}
-                    </span>
-                  </td>
-                  <td class="small fw-semibold text-success">{{ item.score }}</td>
-                </tr>
-                {% endif %}
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
+    <!-- Collapsible assignments panel -->
+    <div class="asg-panel" id="panel-{{ course.id }}">
+      <div class="panel-empty" id="panel-body-{{ course.id }}">
+        <span>Click "View Assignments" to load.</span>
       </div>
     </div>
+
   </div>
+  {% else %}
+  <p style="color:#6b7280;grid-column:1/-1">
+    You are not enrolled in any courses with assignments.
+  </p>
+  {% endfor %}
+</div>
+
+<!-- SUBMIT MODAL -->
+<div class="lms-modal-overlay" id="submitModal" role="dialog" aria-modal="true"
+  onclick="handleOverlayClick(event,'submitModal')">
+  <div class="lms-modal">
+    <div class="lms-modal-header">
+      <div>
+        <div id="submitModalLabel" style="font-size:0.75rem;color:#6b7280;font-weight:500;margin-bottom:2px"></div>
+        <h3>Submit Assignment</h3>
+      </div>
+      <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon" onclick="closeModal('submitModal')"
+        aria-label="Close">
+        <i data-lucide="x" width="18" height="18"></i>
+      </button>
+    </div>
+    <form id="submitForm" onsubmit="submitAssignment(event)">
+      <input type="hidden" id="submitAsgId">
+      <div class="lms-modal-body">
+        <p id="submitAsgDesc" style="font-size:0.875rem;color:#374151;margin:0"></p>
+
+        <div style="display:flex;flex-direction:column;gap:0.375rem">
+          <label style="font-size:0.8125rem;font-weight:500">Your Submission (PDF)</label>
+          <div class="drop-zone" id="submitDropZone" onclick="document.getElementById('submitFile').click()"
+            ondragover="event.preventDefault();this.classList.add('drag-over')"
+            ondragleave="this.classList.remove('drag-over')" ondrop="handleSubmitDrop(event)">
+            <i data-lucide="upload-cloud" width="26" height="26" style="color:#93c5fd"></i>
+            <p>Drop PDF here or <strong>click to browse</strong></p>
+            <span>Single PDF · Max 20 MB</span>
+          </div>
+          <input type="file" id="submitFile" accept=".pdf" style="display:none" onchange="handleSubmitSelect(event)">
+          <div id="submitFileChip" style="margin-top:0.375rem"></div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:0.375rem">
+          <label style="font-size:0.8125rem;font-weight:500">Notes (optional)</label>
+          <textarea id="submitNotes" rows="3"
+            style="border:1px solid rgba(0,0,0,0.12);border-radius:0.5rem;padding:0.45rem 0.75rem;font-size:0.875rem;font-family:inherit;resize:vertical;outline:none"
+            placeholder="Any notes for your lecturer…"></textarea>
+        </div>
+      </div>
+      <div class="lms-modal-footer">
+        <button type="button" class="btn-lms btn-lms-secondary" onclick="closeModal('submitModal')">Cancel</button>
+        <button type="submit" class="btn-lms btn-lms-primary" id="submitBtn">
+          <i data-lucide="send" width="14" height="14"></i> Submit
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="lms-toast-container" aria-live="polite" id="toastContainer"></div>
 
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script>
-  // Course filter applies to the "All" tab only
-  const courseFilter = document.getElementById('courseFilter');
-  courseFilter?.addEventListener('change', () => {
-    const val = courseFilter.value;
-    document.querySelectorAll('.assign-row').forEach(row => {
-      row.style.display = (val === 'all' || row.dataset.course === val) ? '' : 'none';
+  lucide.createIcons();
+
+  const loadedPanels = new Set();
+  let submitFile = null;
+  let activeAsgId = null;
+  let activeCourseId = null;
+
+  function openModal(id) { document.getElementById(id).classList.add('open'); document.body.style.overflow = 'hidden'; }
+  function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow = ''; }
+  function handleOverlayClick(e, id) { if (e.target === document.getElementById(id)) closeModal(id); }
+
+  async function togglePanel(courseId) {
+    const panel = document.getElementById('panel-' + courseId);
+    const chevron = document.getElementById('chevron-' + courseId);
+    const label = document.getElementById('toggle-label-' + courseId);
+    const isOpen = panel.classList.contains('open');
+    if (isOpen) {
+      panel.classList.remove('open');
+      chevron.classList.remove('rotated');
+      label.textContent = 'View Assignments';
+    } else {
+      panel.classList.add('open');
+      chevron.classList.add('rotated');
+      label.textContent = 'Hide Assignments';
+      if (!loadedPanels.has(courseId)) await loadPanel(courseId);
+    }
+  }
+
+  async function loadPanel(courseId) {
+    const body = document.getElementById('panel-body-' + courseId);
+    body.innerHTML = '<div class="panel-empty"><span>Loading…</span></div>';
+
+    let data;
+    try {
+      const res = await fetch('/student/assignments/data?course_id=' + courseId);
+      if (!res.ok) throw new Error(await res.text());
+      data = await res.json();
+    } catch (err) {
+      body.innerHTML = '<div class="panel-empty"><span>Failed to load: ' + escHtml(err.message) + '</span></div>';
+      return;
+    }
+
+    loadedPanels.add(courseId);
+
+    if (!data.length) {
+      body.innerHTML = `
+        <div class="panel-empty">
+          <i data-lucide="file-plus" width="28" height="28" style="color:#d1d5db"></i>
+          <span>No assignments in this course yet.</span>
+        </div>`;
+      lucide.createIcons({ nodes: [body] });
+      return;
+    }
+
+    const weeks = {};
+    data.forEach(a => {
+      const k = a.week_number ?? 0;
+      (weeks[k] = weeks[k] || []).push(a);
     });
-  });
+
+    const now = new Date();
+    let html = '';
+
+    Object.keys(weeks).sort((a, b) => +a - +b).forEach(w => {
+      const label = (+w === 0) ? 'Unassigned' : 'Week ' + w;
+      html += `
+        <div class="panel-week-header">
+          <span class="week-badge">${label}</span>
+          <span class="panel-week-label">
+            ${weeks[w].length} assignment${weeks[w].length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <div class="asg-grid">`;
+
+      weeks[w].forEach(a => {
+        const dl = new Date(a.due_date);
+        const overdue = dl < now;
+        const dlStr = dl.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+        const accent = overdue ? '#dc2626' : '#2563eb';
+
+        const submitted = !!a.submission;
+        const statusTag = submitted
+          ? `<span class="tag-pending" style="background:#dcfce7;color:#166534"><i data-lucide="check-circle" width="10" height="10"></i> Submitted</span>`
+          : overdue
+          ? `<span class="tag-overdue"><i data-lucide="alert-circle" width="10" height="10"></i> Overdue</span>`
+          : `<span class="tag-pending"><i data-lucide="clock" width="10" height="10"></i> Pending</span>`;
+
+        const filesHtml = (a.files && a.files.length)
+          ? `<div style="display:flex;flex-wrap:wrap;gap:0.375rem;margin-top:0.25rem">
+               ${a.files.map(f => `<a href="${escHtml(f.file_url)}" target="_blank" rel="noopener" class="file-pill">
+                 <i data-lucide="file-text" width="10" height="10"></i>${escHtml(f.file_name)}
+               </a>`).join('')}
+             </div>`
+          : '';
+
+        const submissionHtml = submitted
+          ? `<div class="asg-meta-row">
+               <i data-lucide="check-circle" width="12" height="12"></i>
+               Submitted: ${new Date(a.submission.submitted_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })}
+             </div>
+             <div style="display:flex;flex-wrap:wrap;gap:0.375rem;margin-top:0.25rem">
+               <a href="${escHtml(a.submission.file_url)}" target="_blank" rel="noopener" class="file-pill">
+                 <i data-lucide="download" width="10" height="10"></i>${escHtml(a.submission.file_name)}
+               </a>
+             </div>
+             ${a.submission.status === 'graded' ? `
+               <div class="asg-meta-row">
+                 <i data-lucide="award" width="12" height="12"></i>
+                 Grade: ${Number(a.submission.grade ?? 0).toFixed(1)} / ${a.max_score}
+               </div>
+               ${a.submission.feedback ? `<div class="asg-desc" style="margin-top:0.25rem">Feedback: ${escHtml(a.submission.feedback)}</div>` : ''}
+             ` : ''}`
+          : '';
+
+        html += `
+          <article class="asg-card">
+            <div class="asg-card-header">
+              <div class="asg-accent" style="background:${accent}"></div>
+              <div style="flex:1;min-width:0">
+                <div class="asg-title">${escHtml(a.title)}</div>
+                ${a.description ? `<div class="asg-desc">${escHtml(a.description)}</div>` : ''}
+              </div>
+              ${statusTag}
+            </div>
+            <div class="asg-card-body">
+              <div class="asg-meta-row">
+                <i data-lucide="clock" width="12" height="12"></i>
+                Due: ${dlStr}
+              </div>
+              <div class="asg-meta-row">
+                <i data-lucide="star" width="12" height="12"></i>
+                ${a.max_score} pts
+              </div>
+              <div class="asg-meta-row">
+                <i data-lucide="paperclip" width="12" height="12"></i>
+                ${a.file_count ?? 0} file(s) attached
+              </div>
+              ${filesHtml}
+              ${submissionHtml}
+            </div>
+            <div class="asg-card-footer">
+              <button type="button" class="btn-lms btn-lms-primary btn-lms-sm"
+                      onclick="openSubmitModal(${a.id},'${escJs(a.title)}','${escJs(a.description || '')}',${courseId})">
+                <i data-lucide="upload" width="13" height="13"></i> ${submitted ? 'Resubmit' : 'Submit'}
+              </button>
+            </div>
+          </article>`;
+      });
+
+      html += '</div>';
+    });
+
+    body.innerHTML = html;
+    lucide.createIcons({ nodes: [body] });
+  }
+
+  async function reloadPanel(courseId) {
+    loadedPanels.delete(courseId);
+    const panel = document.getElementById('panel-' + courseId);
+    if (panel?.classList.contains('open')) await loadPanel(courseId);
+  }
+
+  function openSubmitModal(asgId, title, desc, courseId) {
+    activeAsgId = asgId;
+    activeCourseId = courseId;
+    submitFile = null;
+    document.getElementById('submitModalLabel').textContent = title;
+    document.getElementById('submitAsgDesc').textContent = desc || '';
+    document.getElementById('submitFileChip').innerHTML = '';
+    document.getElementById('submitFile').value = '';
+    document.getElementById('submitNotes').value = '';
+    openModal('submitModal');
+  }
+
+  function handleSubmitSelect(e) {
+    const f = e.target.files[0];
+    if (f) { submitFile = f; renderSubmitChip(f); }
+  }
+  function handleSubmitDrop(e) {
+    e.preventDefault();
+    document.getElementById('submitDropZone').classList.remove('drag-over');
+    const f = Array.from(e.dataTransfer.files).find(x => x.type === 'application/pdf');
+    if (f) { submitFile = f; renderSubmitChip(f); }
+  }
+  function renderSubmitChip(f) {
+    const el = document.getElementById('submitFileChip');
+    el.innerHTML = `
+      <div class="file-chip">
+        <i data-lucide="file-text" width="14" height="14" style="color:#2563eb;flex-shrink:0"></i>
+        <span class="chip-name">${escHtml(f.name)}</span>
+        <span style="color:#9ca3af;white-space:nowrap">${(f.size / 1024 / 1024).toFixed(1)} MB</span>
+        <button type="button" class="btn-lms btn-lms-ghost btn-lms-icon"
+                style="padding:2px;margin-left:auto" onclick="clearSubmitFile()">
+          <i data-lucide="x" width="12" height="12"></i>
+        </button>
+      </div>`;
+    lucide.createIcons({ nodes: [el] });
+  }
+  function clearSubmitFile() {
+    submitFile = null;
+    document.getElementById('submitFileChip').innerHTML = '';
+    document.getElementById('submitFile').value = '';
+  }
+
+  async function submitAssignment(e) {
+    e.preventDefault();
+    if (!submitFile) { showToast('Please attach your PDF first.', 'error'); return; }
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true; btn.innerHTML = 'Submitting…';
+
+    const fd = new FormData();
+    fd.append('assignment_id', activeAsgId);
+    fd.append('notes', document.getElementById('submitNotes').value);
+    fd.append('file', submitFile);
+
+    try {
+      const res = await fetch('/student/assignments/submit', { method: 'POST', body: fd });
+      if (res.ok) {
+        closeModal('submitModal');
+        showToast('Assignment submitted successfully!', 'success');
+        if (activeCourseId) await reloadPanel(activeCourseId);
+      } else {
+        showToast('Submission failed: ' + await res.text(), 'error');
+      }
+    } catch { showToast('Network error.', 'error'); }
+
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="send" width="14" height="14"></i> Submit';
+    lucide.createIcons({ nodes: [btn] });
+  }
+
+  function filterCourses() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    document.querySelectorAll('.course-card-item').forEach(card => {
+      const ok = card.dataset.name.includes(q) || card.dataset.code.includes(q);
+      card.style.display = ok ? '' : 'none';
+    });
+  }
+
+  function showToast(msg, type) {
+    const c = document.getElementById('toastContainer');
+    const t = document.createElement('div');
+    t.className = 'lms-toast ' + (type || '');
+    const icon = type === 'success' ? 'check-circle' : type === 'error' ? 'x-circle' : 'info';
+    t.innerHTML = `<i data-lucide="${icon}" width="16" height="16"></i>${escHtml(msg)}`;
+    c.appendChild(t);
+    lucide.createIcons({ nodes: [t] });
+    requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add('show')));
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => t.remove(), 300); }, 3500);
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function escJs(s) {
+    return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  }
 </script>
 {% endblock %}

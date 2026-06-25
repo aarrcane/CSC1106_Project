@@ -17,10 +17,11 @@ use std::env;
 
 mod admin;
 mod auth;
-mod student_quiz;
+mod forum;
 mod lecturer;
 mod storage;
 mod student;
+mod student_quiz;
 mod quiz_engine;
 use storage::SupabaseStorage;
 
@@ -504,14 +505,77 @@ async fn main() -> std::io::Result<()> {
             .route("/password/change", web::get().to(password_change_page))
             .route("/password/change", web::post().to(password_change_submit))
             // ── Student ───────────────────────────────────────────────────────
-            .route("/student/dashboard", web::get().to(student::student_dashboard))
+            .route(
+                "/student/dashboard",
+                web::get().to(student::student_dashboard),
+            )
             .route("/student/courses", web::get().to(student::student_courses))
-            .route("/student/assignments", web::get().to(student::student_assignments))
+            .route(
+                "/student/assignments",
+                web::get().to(student::student_assignments),
+            )
             .route("/student/grades", web::get().to(student::student_grades))
-            .route("/student/announcement", web::get().to(student::student_announcement))
-            .route("/student/attendance", web::get().to(student::student_attendance))
-            .route("/student/forum", web::get().to(student::student_forum))
-            .route("/student/course/{id}/data", web::get().to(student::student_course_data))
+            .route(
+                "/student/announcement",
+                web::get().to(student::student_announcement),
+            )
+            .route(
+                "/student/attendance",
+                web::get().to(student::student_attendance),
+            )
+            .route("/student/forum", web::get().to(forum::student_forum))
+            .route(
+                "/student/forum/new",
+                web::post().to(forum::create_student_thread),
+            )
+            .route(
+                "/student/courses/{course_id}/forum",
+                web::get().to(forum::student_course_forum),
+            )
+            .route(
+                "/student/forum/threads/{thread_id}",
+                web::get().to(forum::student_thread_detail),
+            )
+            .route(
+                "/student/forum/threads/{thread_id}/reply",
+                web::post().to(forum::add_student_reply),
+            )
+            .route(
+                "/student/forum/threads/{thread_id}/edit",
+                web::post().to(forum::edit_student_thread),
+            )
+            .route(
+                "/student/forum/threads/{thread_id}/delete",
+                web::post().to(forum::delete_student_thread),
+            )
+            .route(
+                "/student/forum/posts/{post_id}/edit",
+                web::post().to(forum::edit_student_post),
+            )
+            .route(
+                "/student/forum/posts/{post_id}/delete",
+                web::post().to(forum::delete_student_post),
+            )
+            .route(
+                "/student/forum/attachments/{attachment_id}/delete",
+                web::post().to(forum::delete_student_attachment),
+            )
+            .route(
+                "/student/course/{id}/data",
+                web::get().to(student::student_course_data),
+            )
+            .route(
+                "/student/profile",
+                web::get().to(student::student_profile_page),
+            )
+            .route(
+                "/student/settings",
+                web::get().to(student::student_settings_page),
+            )
+            .route(
+                "/student/settings",
+                web::post().to(student::student_settings_submit),
+            )
             // ── Student quizzes ───────────────────────
             .route("/student/quizzes", web::get().to(student_quiz::quiz_list))
             .route(
@@ -538,10 +602,27 @@ async fn main() -> std::io::Result<()> {
                 "/student/quizzes/{quiz_id}/monitoring-events",
                 web::post().to(student_quiz::save_monitoring_event),
             )
+            .route(
+                "/student/assignments/data",
+                web::get().to(student::student_assignments_data),
+            )
+            .route(
+                "/student/assignments/submit",
+                web::post().to(student::student_assignment_submit),
+            )
             // ── Lecturer ──────────────────────────────────────────────────────
-            .route("/lecturer/dashboard", web::get().to(lecturer::lecturer_dashboard))
-            .route("/lecturer/courses", web::get().to(lecturer::lecturer_courses_page))
-            .route("/lecturer/course/{id}/data", web::get().to(lecturer::lecturer_course_data))
+            .route(
+                "/lecturer/dashboard",
+                web::get().to(lecturer::lecturer_dashboard),
+            )
+            .route(
+                "/lecturer/courses",
+                web::get().to(lecturer::lecturer_courses_page),
+            )
+            .route(
+                "/lecturer/course/{id}/data",
+                web::get().to(lecturer::lecturer_course_data),
+            )
             .route(
                 "/lecturer/course/{id}/week/create",
                 web::post().to(lecturer::create_week),
@@ -558,15 +639,84 @@ async fn main() -> std::io::Result<()> {
                 "/lecturer/material/{id}/delete",
                 web::delete().to(lecturer::delete_material),
             )
-            .route("/lecturer/assignments", web::get().to(lecturer::lecturer_assignments_page))
-            .route("/lecturer/quizzes", web::get().to(lecturer::lecturer_quizzes_page))
-            .route("/lecturer/grades", web::get().to(lecturer::lecturer_grades_page))
-            .route("/lecturer/attendance", web::get().to(lecturer::lecturer_attendance_page))
-            .route("/lecturer/forum", web::get().to(lecturer::lecturer_forum_page))
-            .route("/lecturer/profile", web::get().to(lecturer::lecturer_profile_page))
-            .route("/lecturer/settings", web::get().to(lecturer::lecturer_settings_page))
+            .route(
+                "/lecturer/assignments",
+                web::get().to(lecturer::lecturer_assignments_page),
+            )
+            .route(
+                "/lecturer/quizzes",
+                web::get().to(lecturer::lecturer_quizzes_page),
+            )
+            .route(
+                "/lecturer/grades",
+                web::get().to(lecturer::lecturer_grades_page),
+            )
+            .route(
+                "/lecturer/attendance",
+                web::get().to(lecturer::lecturer_attendance_page),
+            )
+            .route("/lecturer/forum", web::get().to(forum::lecturer_forum))
+            .route(
+                "/lecturer/forum/new",
+                web::post().to(forum::create_lecturer_thread),
+            )
+            .route(
+                "/lecturer/courses/{course_id}/forum",
+                web::get().to(forum::lecturer_course_forum),
+            )
+            .route(
+                "/lecturer/forum/threads/{thread_id}",
+                web::get().to(forum::lecturer_thread_detail),
+            )
+            .route(
+                "/lecturer/forum/threads/{thread_id}/reply",
+                web::post().to(forum::add_lecturer_reply),
+            )
+            .route(
+                "/lecturer/forum/threads/{thread_id}/{action}",
+                web::post().to(forum::moderate_thread),
+            )
+            .route(
+                "/lecturer/forum/posts/{post_id}/edit",
+                web::post().to(forum::edit_lecturer_post),
+            )
+            .route(
+                "/lecturer/forum/posts/{post_id}/{action}",
+                web::post().to(forum::moderate_post),
+            )
+            .route(
+                "/lecturer/forum/attachments/{attachment_id}/{action}",
+                web::post().to(forum::moderate_attachment),
+            )
+            .route(
+                "/lecturer/profile",
+                web::get().to(lecturer::lecturer_profile_page),
+            )
+            .route(
+                "/lecturer/settings",
+                web::get().to(lecturer::lecturer_settings_page),
+            )
+            .route(
+                "/lecturer/settings",
+                web::post().to(lecturer::lecturer_settings_submit),
+            )
+            .route(
+                "/lecturer/assignments/data",
+                web::get().to(lecturer::lecturer_assignments_data),
+            )
+            .route(
+                "/lecturer/assignments/create",
+                web::post().to(lecturer::create_assignment),
+            )
+            .route(
+                "/lecturer/assignments/{id}/delete",
+                web::delete().to(lecturer::delete_assignment),
+            )
+            .route(
+                "/lecturer/submissions/{id}/grade",
+                web::post().to(lecturer::grade_submission),
+            )
             .configure(lecturer_quiz::config)
-
             // Admin Routes
             .route("/admin/dashboard", web::get().to(admin::admin_dashboard))
             .route("/admin/users", web::get().to(admin::admin_users_page))
@@ -577,6 +727,14 @@ async fn main() -> std::io::Result<()> {
             .route(
                 "/admin/users/{id}/toggle-active",
                 web::post().to(admin::admin_toggle_user_active),
+            )
+            .route(
+                "/admin/users/{id}/update",
+                web::post().to(admin::admin_update_user),
+            )
+            .route(
+                "/admin/users/{id}/reset-password",
+                web::post().to(admin::admin_reset_user_password),
             )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
             .route("/admin/settings", web::get().to(admin::admin_settings_page))
@@ -591,6 +749,14 @@ async fn main() -> std::io::Result<()> {
                 web::delete().to(admin::delete_course),
             )
             .route("/admin/content", web::get().to(admin::admin_content_page))
+            .route(
+                "/admin/content/forum/thread/{id}/{action}",
+                web::post().to(admin::admin_moderate_forum_thread),
+            )
+            .route(
+                "/admin/content/forum/post/{id}/{action}",
+                web::post().to(admin::admin_moderate_forum_post),
+            )
             .route(
                 "/admin/course/{id}/enrollments",
                 web::get().to(admin::get_course_enrollments),

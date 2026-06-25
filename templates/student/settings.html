@@ -1,0 +1,85 @@
+{% extends "base_student.html" %}
+
+{% block title %}Settings - Student{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-left">
+    <h4>Settings</h4>
+    <p>Manage notification preferences and display mode.</p>
+  </div>
+</div>
+
+{% if settings_success is defined %}
+<div class="alert alert-success">{{ settings_success }}</div>
+{% endif %}
+
+<form method="post" action="/student/settings" class="card border-0 shadow-sm">
+  <div class="card-header bg-white border-bottom py-3 px-4">
+    <h6 class="fw-bold mb-0"><i class="bi bi-sliders me-2 text-primary"></i>Preferences</h6>
+  </div>
+  <div class="card-body px-4 py-3">
+    <h6 class="fw-semibold mb-3">Notifications</h6>
+    <div class="row g-3 mb-4">
+      <div class="col-12 col-md-6">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="email_notifications" name="email_notifications" {% if preferences.email_notifications %}checked{% endif %}>
+          <label class="form-check-label" for="email_notifications">Email notifications</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="course_notifications" name="course_notifications" {% if preferences.course_notifications %}checked{% endif %}>
+          <label class="form-check-label" for="course_notifications">Course updates</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="forum_notifications" name="forum_notifications" {% if preferences.forum_notifications %}checked{% endif %}>
+          <label class="form-check-label" for="forum_notifications">Forum replies</label>
+        </div>
+      </div>
+      <div class="col-12 col-md-6">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="grade_notifications" name="grade_notifications" {% if preferences.grade_notifications %}checked{% endif %}>
+          <label class="form-check-label" for="grade_notifications">Grade releases</label>
+        </div>
+      </div>
+    </div>
+
+    <h6 class="fw-semibold mb-3">Appearance</h6>
+    <div class="d-flex gap-3 flex-wrap">
+      <input type="radio" class="btn-check" name="theme_mode" id="theme_light" value="light" {% if preferences.theme_mode != "dark" %}checked{% endif %}>
+      <label class="btn btn-outline-secondary" for="theme_light"><i class="bi bi-sun me-2"></i>Light mode</label>
+      <input type="radio" class="btn-check" name="theme_mode" id="theme_dark" value="dark" {% if preferences.theme_mode == "dark" %}checked{% endif %}>
+      <label class="btn btn-outline-secondary" for="theme_dark"><i class="bi bi-moon me-2"></i>Dark mode</label>
+    </div>
+  </div>
+  <div class="card-footer bg-white border-top px-4 py-3 d-flex justify-content-end">
+    <button type="submit" class="btn-lms btn-lms-primary"><i class="bi bi-check2"></i> Save Settings</button>
+  </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function applyTheme(value) {
+    document.documentElement.classList.toggle('theme-dark', value === 'dark');
+    document.documentElement.setAttribute('data-bs-theme', value === 'dark' ? 'dark' : 'light');
+    try {
+      document.cookie = 'lms-theme=' + encodeURIComponent(value) + '; path=/; max-age=31536000; SameSite=Lax';
+    } catch (e) {}
+  }
+  // Apply saved theme from database on page load
+  var savedTheme = '{{ preferences.theme_mode }}';
+  if (savedTheme === 'dark') {
+    applyTheme('dark');
+  } else {
+    applyTheme('light');
+  }
+  // Add listener for theme toggle
+  document.querySelectorAll('input[name="theme_mode"]').forEach(function (input) {
+    input.addEventListener('change', function () { applyTheme(input.value); });
+  });
+</script>
+{% endblock %}

@@ -149,6 +149,8 @@
     const lecturers = {{ lecturers_count | default(value=0) }};
     const admins = {{ admins_count | default(value=0) }};
     const enrollments = {{ enrollments_count | default(value=0) }};
+    const enrollmentChartLabels = {{ enrollment_chart_labels_json | default(value="[]") | safe }};
+    const enrollmentChartValues = {{ enrollment_chart_values_json | default(value="[]") | safe }};
 
     // Pie chart for system distribution
     const usersCtx = document.getElementById('usersPie');
@@ -166,27 +168,16 @@
       });
     }
 
-    // Line chart for enrollments (simple generated data based on total enrollments)
+    // Line chart for actual monthly enrollments
     const enrollCtx = document.getElementById('enrollmentsLine');
     if (enrollCtx) {
-      // Generate simple monthly data by splitting total into decreasing values
-      const total = enrollments;
-      const months = ['-5','-4','-3','-2','-1','Now'];
-      const values = [
-        Math.round(total * 0.10),
-        Math.round(total * 0.15),
-        Math.round(total * 0.18),
-        Math.round(total * 0.20),
-        Math.round(total * 0.22),
-        Math.round(total * 0.15)
-      ];
       new Chart(enrollCtx, {
         type: 'line',
         data: {
-          labels: months,
+          labels: enrollmentChartLabels,
           datasets: [{
             label: 'Enrollments',
-            data: values,
+            data: enrollmentChartValues,
             borderColor: '#0d6efd',
             backgroundColor: 'rgba(13,110,253,0.08)',
             fill: true,

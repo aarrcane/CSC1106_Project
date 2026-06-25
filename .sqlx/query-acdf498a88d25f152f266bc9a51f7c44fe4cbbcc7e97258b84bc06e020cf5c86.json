@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT cw.id FROM course_weeks cw\n         JOIN courses c ON c.id = cw.course_id\n         WHERE cw.id = $1 AND c.id = $2 AND c.lecturer_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "course_weeks",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "acdf498a88d25f152f266bc9a51f7c44fe4cbbcc7e97258b84bc06e020cf5c86"
+}

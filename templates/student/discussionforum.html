@@ -1,38 +1,18 @@
 {% extends "base_student.html" %}
 
-{% block title %}Discussion Forum – LMS Portal{% endblock %}
-
-{#
-  Context required:
-    - student_name, student_id, notifications, active_page (= "forum")
-    - courses:  Vec<CourseContext>  (for filter dropdown)
-    - threads:  Vec<ThreadContext>
-        fields: id, title, course_code, course_name,
-                author (String), author_initials (String),
-                created_at (String), last_reply_at (String),
-                reply_count (i32), view_count (i32),
-                is_pinned (bool), is_answered (bool),
-                is_mine (bool),
-                tags: Vec<String>   (e.g. ["question", "announcement"])
-                preview (String)    (first ~120 chars of the body)
-#}
+{% block title %}Discussion Forum - LMS Portal{% endblock %}
 
 {% block content %}
-
-  <!-- Page Header -->
   <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
     <div>
       <h4 class="fw-bold mb-0">Discussion Forum</h4>
       <p class="text-muted small mb-0">Ask questions, share insights and collaborate with classmates</p>
     </div>
-    <button class="btn btn-primary btn-sm"
-            data-bs-toggle="modal"
-            data-bs-target="#newThreadModal">
+    <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newThreadModal">
       <i class="bi bi-plus-lg me-1"></i>New Thread
     </button>
   </div>
 
-  <!-- ── Filter / Search Bar ── -->
   <div class="card border-0 shadow-sm mb-4">
     <div class="card-body py-3 px-4">
       <div class="row g-2 align-items-center">
@@ -41,17 +21,14 @@
             <span class="input-group-text bg-white border-end-0">
               <i class="bi bi-search text-muted"></i>
             </span>
-            <input type="text"
-                   class="form-control border-start-0 ps-0"
-                   id="forumSearch"
-                   placeholder="Search threads…">
+            <input type="text" class="form-control border-start-0 ps-0" id="forumSearch" placeholder="Search threads...">
           </div>
         </div>
         <div class="col-6 col-md-4">
           <select class="form-select form-select-sm" id="forumCourseFilter">
             <option value="all">All Courses</option>
             {% for course in courses %}
-            <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+            <option value="{{ course.code }}">{{ course.code }} - {{ course.name }}</option>
             {% endfor %}
           </select>
         </div>
@@ -67,102 +44,77 @@
     </div>
   </div>
 
-  <!-- ── Thread List ── -->
   <div id="threadList">
     {% for thread in threads %}
-
-    <!-- Pinned threads first (visual only; server should order them) -->
-    <div class="card border-0 shadow-sm mb-3 thread-card
-                {% if thread.is_pinned %}border-start border-4 border-warning{% endif %}"
+    <div class="card border-0 shadow-sm mb-3 thread-card {% if thread.is_pinned %}border-start border-4 border-warning{% endif %}"
          data-course="{{ thread.course_code }}"
          data-answered="{% if thread.is_answered %}true{% else %}false{% endif %}"
          data-mine="{% if thread.is_mine %}true{% else %}false{% endif %}"
          data-replies="{{ thread.reply_count }}"
          data-title="{{ thread.title | lower }}"
          data-preview="{{ thread.preview | lower }}">
-
       <div class="card-body px-4 py-3">
         <div class="d-flex gap-3 align-items-start">
-
-          <!-- Author Avatar -->
-          <div class="forum-avatar flex-shrink-0">
-            {{ thread.author_initials }}
-          </div>
-
+          <div class="forum-avatar flex-shrink-0">{{ thread.author_initials }}</div>
           <div class="flex-grow-1 min-w-0">
-
-            <!-- Title row -->
             <div class="d-flex align-items-start justify-content-between gap-2 flex-wrap mb-1">
               <div class="d-flex align-items-center gap-2 flex-wrap">
                 {% if thread.is_pinned %}
                 <i class="bi bi-pin-angle-fill text-warning" title="Pinned"></i>
                 {% endif %}
-                <a href="/student/forum/{{ thread.id }}"
-                   class="fw-bold text-dark text-decoration-none forum-thread-title">
+                <a href="/student/forum/threads/{{ thread.id }}" class="fw-bold text-dark text-decoration-none forum-thread-title">
                   {{ thread.title }}
                 </a>
+                {% if thread.is_announcement %}
+                <span class="badge bg-info-subtle text-info" style="font-size:0.65rem;">Announcement</span>
+                {% endif %}
                 {% if thread.is_answered %}
                 <span class="badge bg-success-subtle text-success" style="font-size:0.65rem;">
                   <i class="bi bi-check-circle me-1"></i>Answered
                 </span>
                 {% endif %}
-                {% if thread.is_mine %}
-                <span class="badge bg-primary-subtle text-primary" style="font-size:0.65rem;">
-                  My Thread
+                {% if thread.is_locked %}
+                <span class="badge bg-dark-subtle text-dark" style="font-size:0.65rem;">
+                  <i class="bi bi-lock me-1"></i>Locked
                 </span>
                 {% endif %}
+                {% if thread.is_mine %}
+                <span class="badge bg-primary-subtle text-primary" style="font-size:0.65rem;">My Thread</span>
+                {% endif %}
                 {% for tag in thread.tags %}
-                <span class="badge bg-secondary-subtle text-secondary" style="font-size:0.65rem;">
-                  {{ tag }}
-                </span>
+                <span class="badge bg-secondary-subtle text-secondary" style="font-size:0.65rem;">{{ tag }}</span>
                 {% endfor %}
               </div>
-              <span class="text-muted small flex-shrink-0">{{ thread.last_reply_at }}</span>
+              <span class="text-muted small flex-shrink-0" data-local-time="{{ thread.last_reply_at }}">{{ thread.last_reply_at }}</span>
             </div>
 
-            <!-- Course + preview -->
             <div class="mb-2">
-              <span class="badge bg-primary-subtle text-primary fw-semibold me-1">
-                {{ thread.course_code }}
-              </span>
+              <span class="badge bg-primary-subtle text-primary fw-semibold me-1">{{ thread.course_code }}</span>
               <span class="text-muted small">{{ thread.course_name }}</span>
             </div>
             <p class="text-muted small mb-2 thread-preview">{{ thread.preview }}</p>
 
-            <!-- Footer meta -->
             <div class="d-flex align-items-center gap-3 flex-wrap">
-              <span class="small text-muted">
-                <i class="bi bi-person me-1"></i>{{ thread.author }}
-              </span>
-              <span class="small text-muted">
-                <i class="bi bi-clock me-1"></i>{{ thread.created_at }}
-              </span>
+              <span class="small text-muted"><i class="bi bi-person me-1"></i>{{ thread.author }}</span>
+              <span class="small text-muted"><i class="bi bi-clock me-1"></i><span data-local-time="{{ thread.created_at }}">{{ thread.created_at }}</span></span>
               <span class="small text-muted">
                 <i class="bi bi-chat-left-text me-1"></i>
                 {% if thread.reply_count == 1 %}1 reply{% else %}{{ thread.reply_count }} replies{% endif %}
               </span>
-              <span class="small text-muted">
-                <i class="bi bi-eye me-1"></i>{{ thread.view_count }} views
-              </span>
+              <span class="small text-muted"><i class="bi bi-eye me-1"></i>{{ thread.view_count }} views</span>
             </div>
-
           </div>
 
-          <!-- Reply CTA -->
           <div class="flex-shrink-0 d-none d-md-block">
-            <a href="/student/forum/{{ thread.id }}"
-               class="btn btn-outline-primary btn-sm">
-              <i class="bi bi-reply me-1"></i>Reply
+            <a href="/student/forum/threads/{{ thread.id }}" class="btn btn-outline-primary btn-sm">
+              <i class="bi bi-reply me-1"></i>Open
             </a>
           </div>
-
         </div>
       </div>
     </div>
-
     {% endfor %}
 
-    <!-- Empty state -->
     <div id="forumEmpty" class="card border-0 shadow-sm" style="display:none;">
       <div class="card-body text-center text-muted py-5">
         <i class="bi bi-chat-square-text fs-1 d-block mb-2 opacity-25"></i>
@@ -174,13 +126,12 @@
     <div class="card border-0 shadow-sm">
       <div class="card-body text-center text-muted py-5">
         <i class="bi bi-chat-square-text fs-1 d-block mb-2 opacity-25"></i>
-        No threads yet. Be the first to start a discussion!
+        No threads yet. Be the first to start a discussion.
       </div>
     </div>
     {% endif %}
   </div>
 
-  <!-- ── New Thread Modal ── -->
   <div class="modal fade" id="newThreadModal" tabindex="-1" aria-labelledby="newThreadModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
       <div class="modal-content border-0 shadow">
@@ -191,43 +142,35 @@
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body px-4 py-3">
-          <form id="newThreadForm" action="/student/forum/new" method="POST">
+          <form id="newThreadForm" action="/student/forum/new" method="POST" enctype="multipart/form-data">
             <div class="mb-3">
               <label for="threadCourse" class="form-label fw-semibold small">Course</label>
-              <select class="form-select form-select-sm" id="threadCourse" name="course_code" required>
-                <option value="" disabled selected>Select a course…</option>
+              <select class="form-select form-select-sm" id="threadCourse" name="course_id" required>
+                <option value="" disabled selected>Select a course...</option>
                 {% for course in courses %}
-                <option value="{{ course.code }}">{{ course.code }} – {{ course.name }}</option>
+                <option value="{{ course.id }}">{{ course.code }} - {{ course.name }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="mb-3">
               <label for="threadTitle" class="form-label fw-semibold small">Title</label>
-              <input type="text"
-                     class="form-control form-control-sm"
-                     id="threadTitle"
-                     name="title"
-                     placeholder="e.g. Question about Week 3 lecture…"
-                     required>
+              <input type="text" class="form-control form-control-sm" id="threadTitle" name="title" placeholder="e.g. Question about Week 3 lecture..." required>
             </div>
             <div class="mb-3">
               <label for="threadBody" class="form-label fw-semibold small">Message</label>
-              <textarea class="form-control form-control-sm"
-                        id="threadBody"
-                        name="body"
-                        rows="5"
-                        placeholder="Describe your question or topic in detail…"
-                        required></textarea>
+              <textarea class="form-control form-control-sm" id="threadBody" name="body" rows="5" placeholder="Describe your question or topic in detail..." required></textarea>
             </div>
             <div class="mb-1">
               <label for="threadTags" class="form-label fw-semibold small">
                 Tags <span class="text-muted fw-normal">(optional, comma-separated)</span>
               </label>
-              <input type="text"
-                     class="form-control form-control-sm"
-                     id="threadTags"
-                     name="tags"
-                     placeholder="e.g. question, week3, exam">
+              <input type="text" class="form-control form-control-sm" id="threadTags" name="tags" placeholder="e.g. question, week3, exam">
+            </div>
+            <div class="mt-3">
+              <label for="threadImages" class="form-label fw-semibold small">
+                Images <span class="text-muted fw-normal">(optional, JPG/PNG, max 3, 5MB each)</span>
+              </label>
+              <input type="file" class="form-control form-control-sm" id="threadImages" name="images" accept="image/jpeg,image/png" multiple>
             </div>
           </form>
         </div>
@@ -240,7 +183,6 @@
       </div>
     </div>
   </div>
-
 {% endblock %}
 
 {% block extra_css %}
@@ -277,43 +219,51 @@
 {% block extra_js %}
 <script>
   const courseFilter = document.getElementById('forumCourseFilter');
-  const sortFilter   = document.getElementById('forumSortFilter');
-  const searchInput  = document.getElementById('forumSearch');
-  const threadList   = document.getElementById('threadList');
-  const emptyState   = document.getElementById('forumEmpty');
+  const sortFilter = document.getElementById('forumSortFilter');
+  const searchInput = document.getElementById('forumSearch');
+  const threadList = document.getElementById('threadList');
+  const emptyState = document.getElementById('forumEmpty');
 
   function applyFilters() {
-    const course  = courseFilter.value;
-    const sort    = sortFilter.value;
-    const query   = searchInput.value.toLowerCase().trim();
+    const course = courseFilter.value;
+    const sort = sortFilter.value;
+    const query = searchInput.value.toLowerCase().trim();
 
     let cards = Array.from(document.querySelectorAll('.thread-card'));
 
-    // Filter
     cards.forEach(card => {
-      const matchCourse  = course === 'all' || card.dataset.course === course;
-      const matchSearch  = !query ||
-                           card.dataset.title.includes(query) ||
-                           card.dataset.preview.includes(query);
-      const matchSort    = sort !== 'unanswered' || card.dataset.answered === 'false';
-      const matchMine    = sort !== 'mine'        || card.dataset.mine === 'true';
+      const matchCourse = course === 'all' || card.dataset.course === course;
+      const matchSearch = !query ||
+        card.dataset.title.includes(query) ||
+        card.dataset.preview.includes(query);
+      const matchSort = sort !== 'unanswered' || card.dataset.answered === 'false';
+      const matchMine = sort !== 'mine' || card.dataset.mine === 'true';
 
       card.style.display = (matchCourse && matchSearch && matchSort && matchMine) ? '' : 'none';
     });
 
-    // Sort visible cards
     const visible = cards.filter(c => c.style.display !== 'none');
     if (sort === 'popular') {
       visible.sort((a, b) => parseInt(b.dataset.replies) - parseInt(a.dataset.replies));
     }
     visible.forEach(card => threadList.insertBefore(card, emptyState));
-
-    // Show/hide empty state
     emptyState.style.display = visible.length === 0 ? '' : 'none';
   }
 
   courseFilter?.addEventListener('change', applyFilters);
   sortFilter?.addEventListener('change', applyFilters);
   searchInput?.addEventListener('input', applyFilters);
+
+  document.querySelectorAll('[data-local-time]').forEach((element) => {
+    const value = element.dataset.localTime;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) {
+      element.textContent = date.toLocaleString(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      });
+      element.title = value;
+    }
+  });
 </script>
 {% endblock %}

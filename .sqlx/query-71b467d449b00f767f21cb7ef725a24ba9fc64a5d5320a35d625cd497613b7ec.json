@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO assignment_submissions\n            (assignment_id, student_id, file_name, file_path, notes, submitted_at)\n         VALUES ($1, $2, $3, $4, $5, NOW())\n         ON CONFLICT (assignment_id, student_id)\n         DO UPDATE SET file_name    = EXCLUDED.file_name,\n                       file_path    = EXCLUDED.file_path,\n                       notes        = EXCLUDED.notes,\n                       submitted_at = NOW()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "71b467d449b00f767f21cb7ef725a24ba9fc64a5d5320a35d625cd497613b7ec"
+}

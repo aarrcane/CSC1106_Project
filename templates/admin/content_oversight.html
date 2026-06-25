@@ -3,8 +3,187 @@
 {% block title %}Content Oversight - Admin{% endblock %}
 
 {% block content %}
-<div class="container py-4">
-  <h4>Content Oversight</h4>
-  <p class="text-muted">Placeholder page for content moderation and announcements.</p>
+<div class="page-header mb-4">
+  <div class="page-header-left">
+    <h4>Content Oversight</h4>
+    <p>Moderate forum threads and replies across all courses.</p>
+  </div>
+</div>
+
+{% if content_success %}
+<div class="alert alert-success border-0 shadow-sm">{{ content_success }}</div>
+{% endif %}
+{% if content_error %}
+<div class="alert alert-danger border-0 shadow-sm">{{ content_error }}</div>
+{% endif %}
+
+<div class="course-stats-bar mb-4">
+  <div class="course-stat-item">
+    <div class="stat-label">Forum Threads</div>
+    <div class="stat-value">{{ total_threads }}</div>
+  </div>
+  <div class="course-stat-item">
+    <div class="stat-label">Hidden Threads</div>
+    <div class="stat-value">{{ hidden_threads }}</div>
+  </div>
+  <div class="course-stat-item">
+    <div class="stat-label">Locked Threads</div>
+    <div class="stat-value">{{ locked_threads }}</div>
+  </div>
+  <div class="course-stat-item">
+    <div class="stat-label">Hidden Replies</div>
+    <div class="stat-value">{{ hidden_posts }}</div>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+    <div>
+      <h5 class="mb-0">Forum Threads</h5>
+      <small class="text-muted">Newest 100 threads, including hidden content.</small>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="ps-4">Thread</th>
+          <th>Course</th>
+          <th>Author</th>
+          <th>Status</th>
+          <th class="text-end pe-4">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for thread in threads %}
+        <tr>
+          <td class="ps-4" style="min-width: 320px;">
+            <div class="fw-semibold text-dark">{{ thread.title }}</div>
+            <div class="text-muted small mt-1">{{ thread.body }}</div>
+            <div class="text-muted small mt-2">{{ thread.reply_count }} replies · {{ thread.view_count }} views · {{ thread.created_at }}</div>
+          </td>
+          <td>
+            <span class="badge bg-light text-dark border">{{ thread.course_code }}</span>
+            <div class="text-muted small mt-1">{{ thread.course_name }}</div>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ thread.author }}</div>
+            <div class="text-muted small text-capitalize">{{ thread.author_role }}</div>
+          </td>
+          <td>
+            <div class="d-flex flex-wrap gap-1">
+              {% if thread.deleted_at %}
+              <span class="badge bg-danger-subtle text-danger border">Hidden</span>
+              {% endif %}
+              {% if thread.locked_at %}
+              <span class="badge bg-dark-subtle text-dark border">Locked</span>
+              {% endif %}
+              {% if thread.is_pinned %}
+              <span class="badge bg-info-subtle text-info border">Pinned</span>
+              {% endif %}
+              {% if thread.is_answered %}
+              <span class="badge bg-success-subtle text-success border">Answered</span>
+              {% endif %}
+              {% if not thread.deleted_at and not thread.locked_at and not thread.is_pinned and not thread.is_answered %}
+              <span class="badge bg-light text-dark border">Active</span>
+              {% endif %}
+            </div>
+          </td>
+          <td class="pe-4">
+            <div class="d-flex flex-wrap justify-content-end gap-2">
+              {% if thread.deleted_at %}
+              <form method="post" action="/admin/content/forum/thread/{{ thread.id }}/restore">
+                <button class="btn btn-sm btn-outline-success" type="submit">Restore</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/content/forum/thread/{{ thread.id }}/delete" onsubmit="return confirm('Hide this thread from forum users?');">
+                <input type="hidden" name="reason" value="Hidden by admin">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Hide</button>
+              </form>
+              <form method="post" action="/admin/content/forum/thread/{{ thread.id }}/{% if thread.locked_at %}unlock{% else %}lock{% endif %}">
+                <button class="btn btn-sm btn-outline-secondary" type="submit">{% if thread.locked_at %}Unlock{% else %}Lock{% endif %}</button>
+              </form>
+              <form method="post" action="/admin/content/forum/thread/{{ thread.id }}/{% if thread.is_pinned %}unpin{% else %}pin{% endif %}">
+                <button class="btn btn-sm btn-outline-primary" type="submit">{% if thread.is_pinned %}Unpin{% else %}Pin{% endif %}</button>
+              </form>
+              <form method="post" action="/admin/content/forum/thread/{{ thread.id }}/{% if thread.is_answered %}unanswered{% else %}answered{% endif %}">
+                <button class="btn btn-sm btn-outline-success" type="submit">{% if thread.is_answered %}Unanswer{% else %}Answer{% endif %}</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-5">No forum threads found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card shadow-sm border-0">
+  <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
+    <div>
+      <h5 class="mb-0">Recent Replies</h5>
+      <small class="text-muted">Newest 100 replies posted by students and lecturers.</small>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th class="ps-4">Reply</th>
+          <th>Thread</th>
+          <th>Author</th>
+          <th>Status</th>
+          <th class="text-end pe-4">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for post in posts %}
+        <tr>
+          <td class="ps-4" style="min-width: 320px;">
+            <div class="text-muted small">{{ post.body }}</div>
+            <div class="text-muted small mt-2">{{ post.created_at }}</div>
+          </td>
+          <td>
+            <div class="fw-semibold text-dark">{{ post.thread_title }}</div>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ post.author }}</div>
+            <div class="text-muted small text-capitalize">{{ post.author_role }}</div>
+          </td>
+          <td>
+            {% if post.deleted_at %}
+            <span class="badge bg-danger-subtle text-danger border">Hidden</span>
+            {% else %}
+            <span class="badge bg-light text-dark border">Visible</span>
+            {% endif %}
+          </td>
+          <td class="pe-4">
+            <div class="d-flex justify-content-end gap-2">
+              {% if post.deleted_at %}
+              <form method="post" action="/admin/content/forum/post/{{ post.id }}/restore">
+                <button class="btn btn-sm btn-outline-success" type="submit">Restore</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/content/forum/post/{{ post.id }}/delete" onsubmit="return confirm('Hide this reply from forum users?');">
+                <input type="hidden" name="reason" value="Hidden by admin">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Hide</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-5">No forum replies found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}
