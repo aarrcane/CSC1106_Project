@@ -85,6 +85,24 @@ struct LecturerRecordView {
     note: String,
 }
 
+#[derive(Serialize, FromRow)]
+struct LecturerCourseOverview {
+    course_id: i32,
+    course_code: String,
+    course_name: String,
+    enrolled_count: i64,
+    total_sessions: i64,
+    total_records: i64,
+    attendance_pct: i32,
+    present_count: i64,
+    late_count: i64,
+    absent_count: i64,
+    excused_count: i64,
+    latest_session_title: Option<String>,
+    latest_session_status: Option<String>,
+    latest_session_opened_at: Option<String>,
+}
+
 #[derive(Serialize)]
 struct StudentAttendanceCourseView {
     id: i32,
@@ -101,6 +119,18 @@ struct StudentAttendanceSessionView {
     date: String,
     topic: String,
     status: String,
+}
+
+#[derive(Serialize, FromRow)]
+struct StudentActiveSessionView {
+    id: i32,
+    course_code: String,
+    course_name: String,
+    session_title: String,
+    late_after_minutes: i32,
+    opened_at: String,
+    checked_in_status: Option<String>,
+    checked_in_at: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -141,6 +171,34 @@ pub async fn lecturer_attendance(
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
     };
 
+    let course_overviews = match lecturer_course_overviews(db.get_ref(), lecturer.id).await {
+        Ok(overviews) => overviews,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    let mut ctx = Context::new();
+    insert_lecturer_base(&mut ctx, &user.display_name);
+    take_flash(&session, &mut ctx);
+    ctx.insert("course_overviews", &course_overviews);
+
+    render(&tmpl, "lecturer/attendance_overview.html", &ctx)
+}
+
+pub async fn lecturer_attendance_sessions(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> HttpResponse {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let lecturer = match lecturer_profile(db.get_ref(), user.id).await {
+        Ok(Some(lecturer)) => lecturer,
+        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found."),
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
     let courses = match lecturer_courses(db.get_ref(), lecturer.id).await {
         Ok(courses) => courses,
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
@@ -160,6 +218,37 @@ pub async fn lecturer_attendance(
     render(&tmpl, "lecturer/attendance.html", &ctx)
 }
 
+pub async fn lecturer_attendance_session_detail(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+    path: web::Path<i32>,
+) -> HttpResponse {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let lecturer = match lecturer_profile(db.get_ref(), user.id).await {
+        Ok(Some(lecturer)) => lecturer,
+        Ok(None) => return HttpResponse::Forbidden().body("No lecturer profile found."),
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+    let session_id = path.into_inner();
+
+    let session_view = match lecturer_session(db.get_ref(), lecturer.id, session_id).await {
+        Ok(Some(session_view)) => session_view,
+        Ok(None) => return HttpResponse::NotFound().body("Attendance session not found."),
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    let mut ctx = Context::new();
+    insert_lecturer_base(&mut ctx, &user.display_name);
+    take_flash(&session, &mut ctx);
+    ctx.insert("session", &session_view);
+
+    render(&tmpl, "lecturer/attendance_session_detail.html", &ctx)
+}
+
 pub async fn create_session(
     db: web::Data<PgPool>,
     session: Session,
@@ -177,7 +266,7 @@ pub async fn create_session(
 
     if form.session_title.trim().is_empty() {
         set_flash(&session, FLASH_ERROR, "Session title is required.");
-        return redirect("/lecturer/attendance");
+        return redirect("/lecturer/attendance/sessions");
     }
 
     match lecturer_owns_course(db.get_ref(), lecturer.id, form.course_id).await {
@@ -243,7 +332,7 @@ pub async fn create_session(
         FLASH_SUCCESS,
         &format!("Attendance session opened. Check-in code: {code}"),
     );
-    redirect("/lecturer/attendance")
+    redirect("/lecturer/attendance/sessions")
 }
 
 pub async fn close_session(
@@ -277,7 +366,40 @@ pub async fn close_session(
     {
         Ok(_) => {
             set_flash(&session, FLASH_SUCCESS, "Attendance session closed.");
-            redirect("/lecturer/attendance")
+            redirect("/lecturer/attendance/sessions")
+        }
+        Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
+    }
+}
+
+pub async fn delete_session(
+    db: web::Data<PgPool>,
+    session: Session,
+    path: web::Path<i32>,
+) -> HttpResponse {
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    let session_id = path.into_inner();
+
+    match lecturer_can_manage_session(db.get_ref(), user.id, session_id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return HttpResponse::Forbidden()
+                .body("You can only delete your own attendance sessions.");
+        }
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    }
+
+    match sqlx::query("DELETE FROM attendance_sessions WHERE id = $1")
+        .bind(session_id)
+        .execute(db.get_ref())
+        .await
+    {
+        Ok(_) => {
+            set_flash(&session, FLASH_SUCCESS, "Attendance session deleted.");
+            redirect("/lecturer/attendance/sessions")
         }
         Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
     }
@@ -299,14 +421,15 @@ pub async fn update_record(
         return HttpResponse::BadRequest().body("Invalid attendance status.");
     }
 
-    match lecturer_can_manage_record(db.get_ref(), user.id, record_id).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return HttpResponse::Forbidden()
-                .body("You can only edit records for your own courses.");
-        }
-        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
-    }
+    let record_session_id =
+        match manageable_record_session_id(db.get_ref(), user.id, record_id).await {
+            Ok(Some(session_id)) => session_id,
+            Ok(None) => {
+                return HttpResponse::Forbidden()
+                    .body("You can only edit records for your own courses.");
+            }
+            Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+        };
 
     let note = form.note.as_deref().unwrap_or("").trim();
     match sqlx::query(
@@ -331,7 +454,9 @@ pub async fn update_record(
     {
         Ok(_) => {
             set_flash(&session, FLASH_SUCCESS, "Attendance record updated.");
-            redirect("/lecturer/attendance")
+            redirect(&format!(
+                "/lecturer/attendance/sessions/{record_session_id}"
+            ))
         }
         Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
     }
@@ -361,6 +486,10 @@ pub async fn student_attendance(
             Ok(courses) => courses,
             Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
         };
+    let active_sessions = match student_active_sessions(db.get_ref(), student.id).await {
+        Ok(sessions) => sessions,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
 
     let total_sessions: i32 = attendance_courses.iter().map(|course| course.total).sum();
     let attended_sessions: i32 = attendance_courses
@@ -383,6 +512,7 @@ pub async fn student_attendance(
     ctx.insert("active_page", "attendance");
     take_flash(&session, &mut ctx);
     ctx.insert("courses", &courses);
+    ctx.insert("active_sessions", &active_sessions);
     ctx.insert("attendance_courses", &attendance_courses);
     ctx.insert("total_sessions", &total_sessions);
     ctx.insert("attended_sessions", &attended_sessions);
@@ -578,13 +708,13 @@ async fn lecturer_can_manage_session(
     Ok(found.is_some())
 }
 
-async fn lecturer_can_manage_record(
+async fn manageable_record_session_id(
     db: &PgPool,
     user_id: i32,
     record_id: i32,
-) -> Result<bool, sqlx::Error> {
+) -> Result<Option<i32>, sqlx::Error> {
     let found = sqlx::query_scalar::<_, i32>(
-        "SELECT ar.id
+        "SELECT s.id
          FROM attendance_records ar
          JOIN attendance_sessions s ON s.id = ar.session_id
          JOIN courses c ON c.id = s.course_id
@@ -595,7 +725,56 @@ async fn lecturer_can_manage_record(
     .bind(user_id)
     .fetch_optional(db)
     .await?;
-    Ok(found.is_some())
+    Ok(found)
+}
+
+async fn lecturer_course_overviews(
+    db: &PgPool,
+    lecturer_id: i32,
+) -> Result<Vec<LecturerCourseOverview>, sqlx::Error> {
+    sqlx::query_as::<_, LecturerCourseOverview>(
+        "SELECT
+             c.id AS course_id,
+             c.course_code,
+             c.course_name,
+             COUNT(DISTINCT e.student_id) AS enrolled_count,
+             COUNT(DISTINCT s.id) AS total_sessions,
+             COUNT(ar.id) AS total_records,
+             COALESCE(
+                 ROUND(
+                     COUNT(ar.id) FILTER (WHERE ar.status IN ('present', 'late', 'excused'))::NUMERIC
+                     * 100 / NULLIF(COUNT(ar.id), 0)
+                 )::INT,
+                 0
+             ) AS attendance_pct,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'present') AS present_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'late') AS late_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'absent') AS absent_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'excused') AS excused_count,
+             latest.session_title AS latest_session_title,
+             latest.status AS latest_session_status,
+             CASE
+                 WHEN latest.opened_at IS NULL THEN NULL
+                 ELSE TO_CHAR(latest.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+             END AS latest_session_opened_at
+         FROM courses c
+         LEFT JOIN enrollments e ON e.course_id = c.id
+         LEFT JOIN attendance_sessions s ON s.course_id = c.id
+         LEFT JOIN attendance_records ar ON ar.session_id = s.id
+         LEFT JOIN LATERAL (
+             SELECT session_title, status, opened_at
+             FROM attendance_sessions
+             WHERE course_id = c.id
+             ORDER BY opened_at DESC
+             LIMIT 1
+         ) latest ON TRUE
+         WHERE c.lecturer_id = $1
+         GROUP BY c.id, c.course_code, c.course_name, latest.session_title, latest.status, latest.opened_at
+         ORDER BY c.course_code",
+    )
+    .bind(lecturer_id)
+    .fetch_all(db)
+    .await
 }
 
 async fn lecturer_sessions(
@@ -636,28 +815,54 @@ async fn lecturer_sessions(
 
     let mut sessions = Vec::with_capacity(rows.len());
     for row in rows {
-        let records = lecturer_records(db, row.id).await.unwrap_or_default();
-        sessions.push(LecturerSessionView {
-            id: row.id,
-            course_id: row.course_id,
-            course_code: row.course_code,
-            course_name: row.course_name,
-            session_title: row.session_title,
-            check_in_code: row.check_in_code,
-            status: row.status,
-            late_after_minutes: row.late_after_minutes,
-            opened_at: row.opened_at,
-            closed_at: row.closed_at,
-            total_count: row.total_count,
-            present_count: row.present_count,
-            late_count: row.late_count,
-            absent_count: row.absent_count,
-            excused_count: row.excused_count,
-            records,
-        });
+        sessions.push(session_view_from_row(row, Vec::new()));
     }
 
     Ok(sessions)
+}
+
+async fn lecturer_session(
+    db: &PgPool,
+    lecturer_id: i32,
+    session_id: i32,
+) -> Result<Option<LecturerSessionView>, sqlx::Error> {
+    let row = sqlx::query_as::<_, LecturerSessionRow>(
+        "SELECT
+             s.id,
+             s.course_id,
+             c.course_code,
+             c.course_name,
+             s.session_title,
+             s.check_in_code,
+             s.status,
+             s.late_after_minutes,
+             TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
+             CASE
+                 WHEN s.closed_at IS NULL THEN NULL
+                 ELSE TO_CHAR(s.closed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+             END AS closed_at,
+             COUNT(ar.id) AS total_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'present') AS present_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'late') AS late_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'absent') AS absent_count,
+             COUNT(ar.id) FILTER (WHERE ar.status = 'excused') AS excused_count
+         FROM attendance_sessions s
+         JOIN courses c ON c.id = s.course_id
+         LEFT JOIN attendance_records ar ON ar.session_id = s.id
+         WHERE c.lecturer_id = $1 AND s.id = $2
+         GROUP BY s.id, c.course_code, c.course_name",
+    )
+    .bind(lecturer_id)
+    .bind(session_id)
+    .fetch_optional(db)
+    .await?;
+
+    let Some(row) = row else {
+        return Ok(None);
+    };
+
+    let records = lecturer_records(db, row.id).await?;
+    Ok(Some(session_view_from_row(row, records)))
 }
 
 async fn lecturer_records(
@@ -684,6 +889,30 @@ async fn lecturer_records(
     .bind(session_id)
     .fetch_all(db)
     .await
+}
+
+fn session_view_from_row(
+    row: LecturerSessionRow,
+    records: Vec<LecturerRecordView>,
+) -> LecturerSessionView {
+    LecturerSessionView {
+        id: row.id,
+        course_id: row.course_id,
+        course_code: row.course_code,
+        course_name: row.course_name,
+        session_title: row.session_title,
+        check_in_code: row.check_in_code,
+        status: row.status,
+        late_after_minutes: row.late_after_minutes,
+        opened_at: row.opened_at,
+        closed_at: row.closed_at,
+        total_count: row.total_count,
+        present_count: row.present_count,
+        late_count: row.late_count,
+        absent_count: row.absent_count,
+        excused_count: row.excused_count,
+        records,
+    }
 }
 
 async fn student_attendance_courses(
@@ -733,6 +962,36 @@ async fn student_attendance_courses(
     }
 
     Ok(result)
+}
+
+async fn student_active_sessions(
+    db: &PgPool,
+    student_id: i32,
+) -> Result<Vec<StudentActiveSessionView>, sqlx::Error> {
+    sqlx::query_as::<_, StudentActiveSessionView>(
+        "SELECT
+             s.id,
+             c.course_code,
+             c.course_name,
+             s.session_title,
+             s.late_after_minutes,
+             TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
+             ar.status AS checked_in_status,
+             CASE
+                 WHEN ar.checked_in_at IS NULL THEN NULL
+                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+             END AS checked_in_at
+         FROM attendance_sessions s
+         JOIN courses c ON c.id = s.course_id
+         JOIN enrollments e ON e.course_id = c.id
+         LEFT JOIN attendance_records ar
+             ON ar.session_id = s.id AND ar.student_id = e.student_id
+         WHERE e.student_id = $1 AND s.status = 'open'
+         ORDER BY s.opened_at DESC",
+    )
+    .bind(student_id)
+    .fetch_all(db)
+    .await
 }
 
 fn insert_lecturer_base(ctx: &mut Context, display_name: &str) {

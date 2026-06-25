@@ -24,18 +24,65 @@
 {% endif %}
 
 <div class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-white border-bottom">
+    <h6 class="fw-bold mb-0">Active Attendance Sessions</h6>
+  </div>
   <div class="card-body">
-    <form method="post" action="/student/attendance/check-in" class="row g-3 align-items-end">
-      <div class="col-md-8">
-        <label class="form-label small fw-semibold" for="attendanceCode">Attendance Code</label>
-        <input class="form-control text-uppercase font-monospace" id="attendanceCode" name="code" maxlength="12" placeholder="A7K3Q9" required>
+    {% if active_sessions | length > 0 %}
+    <div class="row g-3">
+      {% for session in active_sessions %}
+      <div class="col-lg-6">
+        <div class="border rounded p-3 h-100">
+          <div class="d-flex align-items-start justify-content-between gap-3 flex-wrap mb-2">
+            <div>
+              <span class="badge bg-primary-subtle text-primary mb-2">{{ session.course_code }}</span>
+              <h6 class="fw-bold mb-1">{{ session.session_title }}</h6>
+              <div class="small text-muted">{{ session.course_name }}</div>
+              <div class="small text-muted">
+                Opened <span data-local-time="{{ session.opened_at }}">{{ session.opened_at }}</span>
+              </div>
+            </div>
+            <div class="text-end">
+              <div class="small text-muted">Late threshold</div>
+              <div class="fw-semibold text-success"
+                   data-attendance-countdown
+                   data-opened-at="{{ session.opened_at }}"
+                   data-late-minutes="{{ session.late_after_minutes }}">
+                Calculating...
+              </div>
+            </div>
+          </div>
+
+          {% if session.checked_in_at %}
+          <div class="alert alert-success py-2 px-3 mb-0 small">
+            Checked in as
+            <strong>
+              {% if session.checked_in_status == "late" %}late{% elif session.checked_in_status == "present" %}present{% elif session.checked_in_status == "excused" %}excused{% else %}{{ session.checked_in_status }}{% endif %}
+            </strong>
+            at <span data-local-time="{{ session.checked_in_at }}">{{ session.checked_in_at }}</span>.
+          </div>
+          {% else %}
+          <form method="post" action="/student/attendance/check-in" class="row g-2 align-items-end mt-3">
+            <div class="col-md-8">
+              <label class="form-label small fw-semibold" for="attendanceCode{{ session.id }}">Attendance Code</label>
+              <input class="form-control text-uppercase font-monospace" id="attendanceCode{{ session.id }}" name="code" maxlength="12" placeholder="A7K3Q9" required>
+            </div>
+            <div class="col-md-4">
+              <button class="btn btn-primary w-100" type="submit">
+                <i class="bi bi-check2-circle me-1"></i>Check In
+              </button>
+            </div>
+          </form>
+          {% endif %}
+        </div>
       </div>
-      <div class="col-md-4">
-        <button class="btn btn-primary w-100" type="submit">
-          <i class="bi bi-check2-circle me-1"></i>Check In
-        </button>
-      </div>
-    </form>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="text-muted small">
+      No active attendance sessions are open for your enrolled courses right now.
+    </div>
+    {% endif %}
   </div>
 </div>
 
@@ -200,5 +247,37 @@
       element.title = value;
     }
   });
+
+  function updateAttendanceCountdowns() {
+    document.querySelectorAll('[data-attendance-countdown]').forEach((element) => {
+      const openedAt = new Date(element.dataset.openedAt);
+      const lateMinutes = Number.parseInt(element.dataset.lateMinutes || '10', 10);
+      if (Number.isNaN(openedAt.getTime()) || Number.isNaN(lateMinutes)) {
+        element.textContent = 'Late timer unavailable';
+        element.classList.remove('text-success', 'text-warning');
+        element.classList.add('text-muted');
+        return;
+      }
+
+      const deadline = openedAt.getTime() + lateMinutes * 60 * 1000;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        element.textContent = 'Late check-ins now';
+        element.classList.remove('text-success');
+        element.classList.add('text-warning');
+        return;
+      }
+
+      const totalSeconds = Math.ceil(remaining / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      element.textContent = `${minutes}:${String(seconds).padStart(2, '0')} until late`;
+      element.classList.remove('text-warning', 'text-muted');
+      element.classList.add('text-success');
+    });
+  }
+
+  updateAttendanceCountdowns();
+  setInterval(updateAttendanceCountdowns, 1000);
 </script>
 {% endblock %}

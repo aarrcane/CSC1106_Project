@@ -649,11 +649,23 @@ async fn main() -> std::io::Result<()> {
             )
             .route(
                 "/lecturer/attendance/sessions",
+                web::get().to(attendance::lecturer_attendance_sessions),
+            )
+            .route(
+                "/lecturer/attendance/sessions",
                 web::post().to(attendance::create_session),
+            )
+            .route(
+                "/lecturer/attendance/sessions/{session_id}",
+                web::get().to(attendance::lecturer_attendance_session_detail),
             )
             .route(
                 "/lecturer/attendance/sessions/{session_id}/close",
                 web::post().to(attendance::close_session),
+            )
+            .route(
+                "/lecturer/attendance/sessions/{session_id}/delete",
+                web::post().to(attendance::delete_session),
             )
             .route(
                 "/lecturer/attendance/records/{record_id}",
