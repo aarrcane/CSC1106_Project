@@ -38,6 +38,7 @@
     {% endif %}
 
     <!-- Notification bell -->
+    {% if not is_admin %}
     <div class="dropdown">
       <button class="btn btn-link text-white position-relative p-1" data-bs-toggle="dropdown" aria-label="Notifications">
         <i class="bi bi-bell fs-5"></i>
@@ -74,6 +75,7 @@
     <button class="btn btn-link text-white p-1" aria-label="Messages">
       <i class="bi bi-chat-left-text fs-5"></i>
     </button>
+    {% endif %}
 
     <!-- Profile dropdown -->
     <div class="dropdown">

@@ -204,6 +204,20 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS audit_events (
+    id SERIAL PRIMARY KEY,
+    category VARCHAR(40) NOT NULL CHECK (category IN ('auth', 'user_management', 'course_management', 'content', 'security', 'settings')),
+    action VARCHAR(80) NOT NULL,
+    severity VARCHAR(20) NOT NULL DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'critical')),
+    actor_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+    actor_role VARCHAR(20),
+    actor_display_name VARCHAR(100),
+    target_type VARCHAR(40),
+    target_id INT,
+    details TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS forum_threads (
     id SERIAL PRIMARY KEY,
     course_id INT NOT NULL REFERENCES courses(id) ON DELETE CASCADE,

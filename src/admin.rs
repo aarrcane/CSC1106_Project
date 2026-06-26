@@ -8,6 +8,41 @@ use serde_json::json;
 
 use crate::auth::UserRole;
 
+#[derive(Clone, Debug)]
+pub struct AuditActor {
+    pub user_id: Option<i32>,
+    pub role: Option<String>,
+    pub display_name: Option<String>,
+}
+
+pub async fn log_audit_event(
+    db: &PgPool,
+    category: &str,
+    action: &str,
+    severity: &str,
+    actor: &AuditActor,
+    target_type: Option<&str>,
+    target_id: Option<i32>,
+    details: Option<String>,
+) {
+    let _ = sqlx::query(
+        r#"INSERT INTO audit_events (
+            category, action, severity, actor_user_id, actor_role, actor_display_name, target_type, target_id, details
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
+    )
+    .bind(category)
+    .bind(action)
+    .bind(severity)
+    .bind(actor.user_id)
+    .bind(actor.role.as_deref())
+    .bind(actor.display_name.as_deref())
+    .bind(target_type)
+    .bind(target_id)
+    .bind(details)
+    .execute(db)
+    .await;
+}
+
 #[derive(Deserialize, Clone)]
 pub struct AdminCreateUserForm {
     pub display_name: String,
@@ -82,6 +117,88 @@ pub struct AdminForumPostRow {
 #[derive(Deserialize)]
 pub struct AdminModerationForm {
     pub reason: Option<String>,
+}
+
+#[derive(Serialize, FromRow)]
+struct AdminProfileDetails {
+    display_name: String,
+    email: String,
+    role: String,
+    is_active: bool,
+    created_at: String,
+    user_id: i32,
+    must_change_password: bool,
+    total_users: i64,
+    admin_accounts: i64,
+}
+
+#[derive(Serialize, FromRow)]
+struct AdminPreferenceDetails {
+    email_notifications: bool,
+    course_notifications: bool,
+    forum_notifications: bool,
+    grade_notifications: bool,
+    theme_mode: String,
+}
+
+#[derive(Deserialize)]
+pub struct AdminPreferencesForm {
+    pub email_notifications: Option<String>,
+    pub course_notifications: Option<String>,
+    pub forum_notifications: Option<String>,
+    pub grade_notifications: Option<String>,
+    pub theme_mode: String,
+}
+
+async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            course_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            forum_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            grade_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+            theme_mode VARCHAR(20) NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'dark')),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )",
+    )
+    .execute(db)
+    .await
+    .map(|_| ())
+}
+
+async fn load_user_preferences(
+    db: &PgPool,
+    user_id: i32,
+) -> Result<AdminPreferenceDetails, sqlx::Error> {
+    ensure_user_preferences_table(db).await?;
+    sqlx::query(
+        "INSERT INTO user_preferences (user_id)
+         VALUES ($1)
+         ON CONFLICT (user_id) DO NOTHING",
+    )
+    .bind(user_id)
+    .execute(db)
+    .await?;
+
+    sqlx::query_as::<_, AdminPreferenceDetails>(
+        "SELECT email_notifications, course_notifications, forum_notifications,
+                grade_notifications, theme_mode
+         FROM user_preferences
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(db)
+    .await
+}
+
+fn set_admin_base(ctx: &mut Context, user: &crate::auth::CurrentUser, active_page: &str) {
+    ctx.insert("display_name", &user.display_name);
+    ctx.insert("student_name", &user.display_name);
+    ctx.insert("student_id", "");
+    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
+    ctx.insert("active_page", active_page);
+    ctx.insert("is_admin", &true);
 }
 
 fn set_admin_user_page_base(ctx: &mut Context, user: &crate::auth::CurrentUser) {
@@ -195,7 +312,7 @@ pub async fn admin_create_user(
     session: Session,
     form: web::Form<AdminCreateUserForm>,
 ) -> impl Responder {
-    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
@@ -347,6 +464,23 @@ pub async fn admin_create_user(
             .body(format!("Failed to commit DB transaction: {error}"));
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("admin".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "user_management",
+        "user_created",
+        "warning",
+        &actor,
+        Some("user"),
+        None,
+        Some(format!("Created {role} account for {display_name}")),
+    )
+    .await;
+
     // Use Post-Redirect-Get: store one-time success/temp password in session, then redirect.
     if let Some(tmp) = temp_password {
         if let Err(error) = session.insert("temp_password", &tmp) {
@@ -432,6 +566,22 @@ pub async fn admin_toggle_user_active(
 
     let action = if new_status { "activated" } else { "deactivated" };
     let message = format!("{} has been {action}.", user.display_name);
+    let actor = AuditActor {
+        user_id: Some(current_user.id),
+        role: Some("admin".to_string()),
+        display_name: Some(current_user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "user_management",
+        "user_status_changed",
+        "warning",
+        &actor,
+        Some("user"),
+        Some(user.id),
+        Some(message.clone()),
+    )
+    .await;
     let _ = session.insert("user_status_success", &message);
 
     HttpResponse::SeeOther()
@@ -628,6 +778,23 @@ pub async fn admin_update_user(
             .body(format!("Failed to commit DB transaction: {error}"));
     }
 
+    let actor = AuditActor {
+        user_id: Some(current_user.id),
+        role: Some("admin".to_string()),
+        display_name: Some(current_user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "user_management",
+        "user_updated",
+        "warning",
+        &actor,
+        Some("user"),
+        Some(user_id),
+        Some(format!("Updated account for {display_name}")),
+    )
+    .await;
+
     let _ = session.insert("user_status_success", &format!("{display_name} has been updated."));
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
@@ -639,10 +806,10 @@ pub async fn admin_reset_user_password(
     session: Session,
     user_id: web::Path<i32>,
 ) -> impl Responder {
-    match crate::auth::require_role(&session, UserRole::Admin) {
-        Ok(_) => {}
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
         Err(response) => return response,
-    }
+    };
 
     let user_id = user_id.into_inner();
     let display_name = match sqlx::query_scalar::<_, String>(
@@ -686,6 +853,23 @@ pub async fn admin_reset_user_password(
         return HttpResponse::InternalServerError()
             .body(format!("Failed to reset password: {error}"));
     }
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("admin".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "user_management",
+        "password_reset",
+        "critical",
+        &actor,
+        Some("user"),
+        Some(user_id),
+        Some(format!("Reset password for {display_name}")),
+    )
+    .await;
 
     let _ = session.insert(
         "user_status_success",
@@ -1094,32 +1278,183 @@ fn redirect_admin_content() -> HttpResponse {
         .finish()
 }
 
-pub async fn admin_settings_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn admin_profile_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
 
-    let mut ctx = Context::new();
-    ctx.insert("display_name", &user.display_name);
-    ctx.insert("student_name", &user.display_name);
-    ctx.insert("student_id", "");
-    ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
-    ctx.insert("active_page", "settings");
-    ctx.insert("is_admin", &true);
+    let profile = match sqlx::query_as::<_, AdminProfileDetails>(
+        "SELECT
+             u.display_name,
+             u.email,
+             u.role,
+             u.is_active,
+             to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+             u.id AS user_id,
+             u.must_change_password,
+             (SELECT COUNT(*)::BIGINT FROM users) AS total_users,
+             (SELECT COUNT(*)::BIGINT FROM users WHERE role = 'admin') AS admin_accounts
+         FROM users u
+         WHERE u.id = $1",
+    )
+    .bind(user.id)
+    .fetch_optional(db.get_ref())
+    .await
+    {
+        Ok(Some(profile)) => profile,
+        Ok(None) => return HttpResponse::InternalServerError().body("Admin profile not found"),
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
 
-    let rendered = match tmpl.render("admin/global_settings.html", &ctx) {
+    let mut ctx = Context::new();
+    set_admin_base(&mut ctx, &user, "profile");
+    ctx.insert("profile", &profile);
+
+    let rendered = match tmpl.render("admin/profile.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn admin_settings_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(user) => user,
         Err(response) => return response,
     };
+
+    let preferences = match load_user_preferences(db.get_ref(), user.id).await {
+        Ok(preferences) => preferences,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    let mut ctx = Context::new();
+    set_admin_base(&mut ctx, &user, "settings");
+    ctx.insert("preferences", &preferences);
+    if let Ok(Some(message)) = session.get::<String>("settings_success") {
+        ctx.insert("settings_success", &message);
+        let _ = session.remove("settings_success");
+    }
+
+    let rendered = match tmpl.render("admin/settings.html", &ctx) {
+        Ok(html) => html,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+    HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+pub async fn admin_settings_submit(
+    db: web::Data<PgPool>,
+    session: Session,
+    form: web::Form<AdminPreferencesForm>,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let form = form.into_inner();
+    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
+
+    if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
+        return HttpResponse::InternalServerError().body(error.to_string());
+    }
+
+    let current_preferences = match load_user_preferences(db.get_ref(), user.id).await {
+        Ok(preferences) => preferences,
+        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+    };
+
+    if let Err(error) = sqlx::query(
+        "INSERT INTO user_preferences (
+             user_id, email_notifications, course_notifications, forum_notifications,
+             grade_notifications, theme_mode, updated_at
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         ON CONFLICT (user_id) DO UPDATE
+         SET email_notifications = EXCLUDED.email_notifications,
+             course_notifications = EXCLUDED.course_notifications,
+             forum_notifications = EXCLUDED.forum_notifications,
+             grade_notifications = EXCLUDED.grade_notifications,
+             theme_mode = EXCLUDED.theme_mode,
+             updated_at = NOW()",
+    )
+    .bind(user.id)
+    .bind(current_preferences.email_notifications)
+    .bind(current_preferences.course_notifications)
+    .bind(current_preferences.forum_notifications)
+    .bind(current_preferences.grade_notifications)
+    .bind(theme_mode)
+    .execute(db.get_ref())
+    .await
+    {
+        return HttpResponse::InternalServerError().body(error.to_string());
+    }
+
+    let _ = session.insert("settings_success", "Settings saved.");
+    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    HttpResponse::SeeOther()
+        .insert_header((actix_web::http::header::LOCATION, "/admin/settings"))
+        .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))
+        .finish()
+}
+
+#[derive(serde::Deserialize)]
+pub struct AuditQuery {
+    limit: Option<i64>,
+    category: Option<String>,
+    actor: Option<String>,
+}
+
+pub async fn admin_audit_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+    query: web::Query<AuditQuery>,
+) -> impl Responder {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+
+    let limit = query.limit.unwrap_or(25).clamp(25, 500);
+    let category = query
+        .category
+        .as_deref()
+        .and_then(|value| if value.is_empty() || value == "all" { None } else { Some(value) });
+    let actor_query = query
+        .actor
+        .as_deref()
+        .map(str::trim)
+        .and_then(|value| if value.is_empty() { None } else { Some(value) });
+    let selected_category = category.unwrap_or("all").to_string();
+    let selected_actor_query = actor_query.unwrap_or("").to_string();
+
+    let site_logs = match fetch_site_logs(db.get_ref(), limit, category, actor_query).await {
+        Ok(logs) => logs,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load audit logs: {error}"));
+        }
+    };
+
+    let total_logs = fetch_audit_count(db.get_ref(), category, actor_query, None)
+        .await
+        .unwrap_or(0);
+    let critical_logs = fetch_audit_count(db.get_ref(), category, actor_query, Some("critical"))
+        .await
+        .unwrap_or(0);
+    let has_more = (site_logs.len() as i64) < total_logs;
+    let next_limit = std::cmp::min(limit + 25, total_logs.max(limit));
 
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
@@ -1128,6 +1463,13 @@ pub async fn admin_audit_page(tmpl: web::Data<Tera>, session: Session) -> impl R
     ctx.insert("notifications", &Vec::<crate::NotificationContext>::new());
     ctx.insert("active_page", "audit");
     ctx.insert("is_admin", &true);
+    ctx.insert("logs", &site_logs);
+    ctx.insert("audit_count", &total_logs);
+    ctx.insert("critical_count", &critical_logs);
+    ctx.insert("selected_category", &selected_category);
+    ctx.insert("selected_actor_query", &selected_actor_query);
+    ctx.insert("has_more", &has_more);
+    ctx.insert("next_limit", &next_limit);
 
     let rendered = match tmpl.render("admin/security_audit.html", &ctx) {
         Ok(html) => html,
@@ -1149,6 +1491,77 @@ struct DashboardContentPreview {
     title: String,
     snippet: String,
     when: String,
+}
+
+#[derive(Serialize, FromRow)]
+struct AuditEventEntry {
+    who: String,
+    actor_user_id: Option<i32>,
+    action: String,
+    details: Option<String>,
+    category: String,
+    severity: String,
+    target_type: Option<String>,
+    target_id: Option<i32>,
+    when_label: String,
+}
+
+async fn fetch_site_logs(
+    db: &PgPool,
+    limit: i64,
+    category: Option<&str>,
+    actor_query: Option<&str>,
+) -> Result<Vec<AuditEventEntry>, sqlx::Error> {
+    sqlx::query_as::<_, AuditEventEntry>(
+        r#"SELECT
+              COALESCE(actor_display_name, 'Unknown') AS who,
+              actor_user_id,
+              action,
+              details,
+              category,
+              severity,
+              target_type,
+              target_id,
+              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS when_label
+           FROM audit_events
+           WHERE ($1::text IS NULL OR category = $1)
+             AND (
+                 $2::text IS NULL
+                 OR COALESCE(actor_display_name, '') ILIKE ('%' || $2 || '%')
+                 OR CAST(actor_user_id AS TEXT) ILIKE ('%' || $2 || '%')
+             )
+           ORDER BY created_at DESC
+           LIMIT $3"#,
+    )
+        .bind(category)
+        .bind(actor_query)
+        .bind(limit)
+        .fetch_all(db)
+        .await
+}
+
+async fn fetch_audit_count(
+    db: &PgPool,
+    category: Option<&str>,
+    actor_query: Option<&str>,
+    severity: Option<&str>,
+) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar(
+        r#"SELECT COUNT(*)
+           FROM audit_events
+           WHERE ($1::text IS NULL OR category = $1)
+             AND (
+                 $2::text IS NULL
+                 OR COALESCE(actor_display_name, '') ILIKE ('%' || $2 || '%')
+                 OR CAST(actor_user_id AS TEXT) ILIKE ('%' || $2 || '%')
+             )
+             AND ($3::text IS NULL OR severity = $3)"#,
+    )
+        .bind(category)
+        .bind(actor_query)
+        .bind(severity)
+        .fetch_one(db)
+        .await
 }
 
 #[derive(FromRow)]
@@ -1261,20 +1674,6 @@ pub async fn admin_dashboard(
     ctx.insert("enrollment_chart_labels_json", &enrollment_chart_labels_json);
     ctx.insert("enrollment_chart_values_json", &enrollment_chart_values_json);
 
-    // Recent activity placeholder list (hardcoded sample events)
-    #[derive(Serialize)]
-    struct Activity {
-        who: String,
-        action: String,
-        when: String,
-    }
-    let recent_activity: Vec<Activity> = vec![
-        Activity { who: "alice@student.test".into(), action: "created student account".into(), when: "10m ago".into() },
-        Activity { who: "bob@lecturer.test".into(), action: "published announcement".into(), when: "30m ago".into() },
-        Activity { who: "system".into(), action: "daily enrollment sync".into(), when: "1h ago".into() },
-    ];
-    ctx.insert("recent_activity", &recent_activity);
-
     let content_previews = match sqlx::query_as::<_, DashboardContentPreview>(
         r#"SELECT author, kind, title, snippet, when_label AS "when"
          FROM (
@@ -1326,6 +1725,15 @@ pub async fn admin_dashboard(
     };
     ctx.insert("content_previews", &content_previews);
 
+    let recent_activity = match fetch_site_logs(db.get_ref(), 5, None, None).await {
+        Ok(logs) => logs,
+        Err(error) => {
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to load site logs: {error}"));
+        }
+    };
+    ctx.insert("recent_activity", &recent_activity);
+
     let rendered = match tmpl.render("admin/dashboard.html", &ctx) {
         Ok(html) => html,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
@@ -1368,7 +1776,25 @@ pub async fn create_course(
     .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course created" })),
+        Ok(_) => {
+            let actor = AuditActor {
+                user_id: Some(_user.id),
+                role: Some("admin".to_string()),
+                display_name: Some(_user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "course_management",
+                "course_created",
+                "info",
+                &actor,
+                Some("course"),
+                None,
+                Some(format!("Created course {}", form.course_code)),
+            )
+            .await;
+            HttpResponse::Ok().json(json!({ "message": "Course created" }))
+        }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
@@ -1384,21 +1810,41 @@ pub async fn assign_lecturer(
     db: web::Data<PgPool>,
     session: Session,
 ) -> impl Responder {
-    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(u) => u,
         Err(r) => return r,
     };
 
+    let course_id = cid.into_inner();
+
     let result = sqlx::query!(
         "UPDATE courses SET lecturer_id = $1 WHERE id = $2",
         form.lecturer_id,
-        cid.into_inner()
+        course_id
     )
     .execute(db.get_ref())
     .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Lecturer assigned" })),
+        Ok(_) => {
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some("admin".to_string()),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "course_management",
+                "lecturer_assigned",
+                "info",
+                &actor,
+                Some("course"),
+                Some(course_id),
+                Some(format!("Assigned lecturer {}", form.lecturer_id)),
+            )
+            .await;
+            HttpResponse::Ok().json(json!({ "message": "Lecturer assigned" }))
+        }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
@@ -1408,7 +1854,7 @@ pub async fn delete_course(
     db: web::Data<PgPool>,
     session: Session,
 ) -> impl Responder {
-    let _user = match crate::auth::require_role(&session, UserRole::Admin) {
+    let user = match crate::auth::require_role(&session, UserRole::Admin) {
         Ok(u) => u,
         Err(r) => return r,
     };
@@ -1426,7 +1872,25 @@ pub async fn delete_course(
     .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Course deleted" })),
+        Ok(_) => {
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some("admin".to_string()),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "course_management",
+                "course_deleted",
+                "critical",
+                &actor,
+                Some("course"),
+                Some(course_id),
+                Some(format!("Deleted course {course_id}")),
+            )
+            .await;
+            HttpResponse::Ok().json(json!({ "message": "Course deleted" }))
+        }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }

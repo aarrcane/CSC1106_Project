@@ -25,6 +25,7 @@ mod student;
 mod student_quiz;
 mod quiz_engine;
 use storage::SupabaseStorage;
+use crate::admin::{log_audit_event, AuditActor};
 
 // ─── Shared Context Types ─────────────────────────────────────────────────────
 mod lecturer_quiz;
@@ -430,6 +431,23 @@ async fn password_change_submit(
             .body(format!("Failed to update password: {error}"));
     }
 
+    let actor = AuditActor {
+        user_id: Some(user_id),
+        role: Some(role.clone()),
+        display_name: Some(display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "auth",
+        "password_changed",
+        "warning",
+        &actor,
+        Some("account"),
+        Some(user_id),
+        Some("Updated account password".to_string()),
+    )
+    .await;
+
     let Some(role) = auth::UserRole::from_slug(&role) else {
         return HttpResponse::SeeOther()
             .insert_header(("Location", "/"))
@@ -443,7 +461,16 @@ async fn password_change_submit(
 
 // ─── Index ────────────────────────────────────────────────────────────────────
 
-async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+#[derive(serde::Deserialize)]
+struct LoginPageQuery {
+    logged_out: Option<String>,
+}
+
+async fn index(
+    tmpl: web::Data<Tera>,
+    session: Session,
+    query: web::Query<LoginPageQuery>,
+) -> impl Responder {
     match auth::redirect_authenticated_user(&session) {
         Ok(Some(response)) => return response,
         Ok(None) => {}
@@ -454,6 +481,9 @@ async fn index(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
     ctx.insert("email_value", "");
     ctx.insert("error_message", "");
     ctx.insert("has_error", &false);
+    if query.logged_out.is_some() {
+        ctx.insert("logout_message", "You have been signed out.");
+    }
     let rendered = tmpl.render("index.html", &ctx).unwrap();
 
     HttpResponse::Ok().content_type("text/html").body(rendered)
@@ -748,6 +778,7 @@ async fn main() -> std::io::Result<()> {
             .configure(lecturer_quiz::config)
             // Admin Routes
             .route("/admin/dashboard", web::get().to(admin::admin_dashboard))
+            .route("/admin/profile", web::get().to(admin::admin_profile_page))
             .route("/admin/users", web::get().to(admin::admin_users_page))
             .route(
                 "/admin/users/create",
@@ -767,6 +798,7 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
             .route("/admin/settings", web::get().to(admin::admin_settings_page))
+            .route("/admin/settings", web::post().to(admin::admin_settings_submit))
             .route("/admin/audit", web::get().to(admin::admin_audit_page))
             .route("/admin/course/create", web::post().to(admin::create_course))
             .route(

@@ -1,6 +1,6 @@
 <!-- Partial: sidebar_admin.html
 		 Included by base_admin.html.
-		 Requires Tera context: active_page (String) e.g. "dashboard", "users", "courses", "announcements", "logs", "settings", "profile"
+		 Requires Tera context: active_page (String) e.g. "dashboard", "users", "courses", "content", "settings", "audit", "profile"
 -->
 <aside class="lms-sidebar" id="sidebar">
 	<nav class="pt-2">
@@ -41,10 +41,18 @@
 			</li>
 
 			<li class="nav-item">
+				<a class="nav-link lms-nav-link {% if active_page == 'profile' %}active{% endif %}"
+					 href="/admin/profile">
+					<i class="bi bi-person"></i>
+					<span>Profile</span>
+				</a>
+			</li>
+
+			<li class="nav-item">
 				<a class="nav-link lms-nav-link {% if active_page == 'settings' %}active{% endif %}"
 					 href="/admin/settings">
 					<i class="bi bi-gear"></i>
-					<span>Global Settings</span>
+					<span>Settings</span>
 				</a>
 			</li>
 

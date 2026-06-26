@@ -3,6 +3,7 @@ use actix_web::{HttpResponse, Responder, web};
 use sqlx::PgPool;
 use tera::{Context, Tera};
 
+use crate::admin::{log_audit_event, AuditActor};
 use crate::auth::UserRole;
 
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -1476,6 +1477,23 @@ pub async fn student_settings_submit(
     if let Err(error) = result {
         return HttpResponse::InternalServerError().body(error.to_string());
     }
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("student".to_string()),
+        display_name: None,
+    };
+    log_audit_event(
+        db.get_ref(),
+        "settings",
+        "student_settings_saved",
+        "info",
+        &actor,
+        Some("preferences"),
+        Some(user.id),
+        Some(format!("Theme set to {theme_mode}")),
+    )
+    .await;
 
     let _ = session.insert("settings_success", "Settings saved.");
     let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);

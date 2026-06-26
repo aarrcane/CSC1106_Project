@@ -268,6 +268,77 @@ html.theme-dark .modal-backdrop {
   --bs-backdrop-opacity: 0.7;
 }
 
+/* Custom popups and dialogs (template-level modals/toasts) */
+html.theme-dark .lms-modal-overlay {
+  background: rgba(0, 0, 0, 0.68) !important;
+}
+
+html.theme-dark .lms-modal,
+html.theme-dark .lms-modal-header,
+html.theme-dark .lms-modal-body,
+html.theme-dark .lms-modal-footer,
+html.theme-dark .lms-delete-modal,
+html.theme-dark .lms-delete-modal .lms-modal-body {
+  background: var(--color-surface) !important;
+  color: var(--color-text) !important;
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .lms-modal-header,
+html.theme-dark .lms-modal-footer {
+  border-color: var(--color-divider) !important;
+}
+
+html.theme-dark .lms-modal-header h3,
+html.theme-dark .lms-delete-modal h4,
+html.theme-dark .lms-delete-modal strong {
+  color: var(--color-text) !important;
+}
+
+html.theme-dark .lms-modal-body p,
+html.theme-dark .lms-modal-body small,
+html.theme-dark .lms-modal-body .small,
+html.theme-dark .lms-form-label,
+html.theme-dark .lms-form-hint,
+html.theme-dark .lms-delete-modal p {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .lms-delete-icon {
+  background: rgba(220, 38, 38, 0.2) !important;
+  color: #fca5a5 !important;
+}
+
+html.theme-dark .lms-toast {
+  background: #1f2937 !important;
+  color: var(--color-text) !important;
+  border: 1px solid var(--color-divider) !important;
+}
+
+html.theme-dark .lms-toast.success {
+  background: rgba(22, 163, 74, 0.22) !important;
+  color: #bbf7d0 !important;
+  border-color: rgba(22, 163, 74, 0.35) !important;
+}
+
+html.theme-dark .lms-toast.error {
+  background: rgba(220, 38, 38, 0.22) !important;
+  color: #fecaca !important;
+  border-color: rgba(220, 38, 38, 0.35) !important;
+}
+
+html.theme-dark .lms-modal .btn-lms-ghost,
+html.theme-dark .lms-modal .btn-close,
+html.theme-dark .lms-modal [aria-label="Close"] {
+  color: var(--color-text-muted) !important;
+}
+
+html.theme-dark .lms-modal .btn-lms-ghost:hover,
+html.theme-dark .lms-modal .btn-close:hover,
+html.theme-dark .lms-modal [aria-label="Close"]:hover {
+  color: var(--color-text) !important;
+}
+
 html.theme-dark .login-landing,
 html.theme-dark .login-landing .hero-section {
   background: linear-gradient(180deg, #0f172a 0%, #111827 56%, #172033 100%) !important;

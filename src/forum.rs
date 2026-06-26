@@ -7,6 +7,7 @@ use sqlx::{FromRow, PgPool};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tera::{Context, Tera};
 
+use crate::admin::{log_audit_event, AuditActor};
 use crate::auth::UserRole;
 
 const MAX_ATTACHMENTS_PER_ITEM: usize = 3;
@@ -336,6 +337,23 @@ pub async fn create_student_thread(
     )
     .await;
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("student".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "thread_created",
+        "info",
+        &actor,
+        Some("forum_thread"),
+        Some(thread_id),
+        Some(format!("Created thread in course {course_id}")),
+    )
+    .await;
+
     redirect(&format!("/student/forum/threads/{thread_id}"))
 }
 
@@ -412,6 +430,23 @@ pub async fn create_lecturer_thread(
         )
         .await;
     }
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "thread_created",
+        "info",
+        &actor,
+        Some("forum_thread"),
+        Some(thread_id),
+        Some(format!("Created {thread_type} thread in course {course_id}")),
+    )
+    .await;
 
     redirect(&format!("/lecturer/forum/threads/{thread_id}"))
 }
@@ -546,6 +581,23 @@ pub async fn add_student_reply(
         .await;
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("student".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "reply_created",
+        "info",
+        &actor,
+        Some("forum_post"),
+        Some(post_id),
+        Some(format!("Replied in thread {thread_id}")),
+    )
+    .await;
+
     redirect(&format!("/student/forum/threads/{thread_id}"))
 }
 
@@ -619,6 +671,23 @@ pub async fn add_lecturer_reply(
         .await;
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "reply_created",
+        "info",
+        &actor,
+        Some("forum_post"),
+        Some(post_id),
+        Some(format!("Replied in thread {thread_id}")),
+    )
+    .await;
+
     redirect(&format!("/lecturer/forum/threads/{thread_id}"))
 }
 
@@ -684,6 +753,23 @@ pub async fn edit_student_thread(
         return redirect_with_message(&format!("/student/forum/threads/{thread_id}"), &message);
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("student".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "thread_updated",
+        "warning",
+        &actor,
+        Some("forum_thread"),
+        Some(thread_id),
+        Some("Edited thread content".to_string()),
+    )
+    .await;
+
     redirect(&format!("/student/forum/threads/{thread_id}"))
 }
 
@@ -733,7 +819,25 @@ pub async fn delete_student_thread(
     .await;
 
     match result {
-        Ok(done) if done.rows_affected() > 0 => redirect("/student/forum"),
+        Ok(done) if done.rows_affected() > 0 => {
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some("student".to_string()),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "content",
+                "thread_deleted",
+                "warning",
+                &actor,
+                Some("forum_thread"),
+                Some(thread_id),
+                Some(form.reason.as_deref().unwrap_or("Deleted by author").to_string()),
+            )
+            .await;
+            redirect("/student/forum")
+        }
         Ok(_) => HttpResponse::Forbidden().body("You can only delete your own active thread."),
         Err(error) => HttpResponse::InternalServerError().body(error.to_string()),
     }
@@ -766,6 +870,22 @@ pub async fn delete_student_post(
 
     match result {
         Ok(done) if done.rows_affected() > 0 => {
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some("student".to_string()),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "content",
+                "reply_deleted",
+                "warning",
+                &actor,
+                Some("forum_post"),
+                Some(post_id),
+                Some(form.reason.as_deref().unwrap_or("Deleted by author").to_string()),
+            )
+            .await;
             redirect(&format!("/student/forum/threads/{thread_id}"))
         }
         Ok(_) => HttpResponse::Forbidden().body("You can only delete your own active reply."),
@@ -800,6 +920,23 @@ pub async fn delete_student_attachment(
     if let Err(error) = soft_delete_attachment(db.get_ref(), attachment_id, user.id, reason).await {
         return HttpResponse::InternalServerError().body(error.to_string());
     }
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("student".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "content",
+        "attachment_deleted",
+        "warning",
+        &actor,
+        Some("forum_attachment"),
+        Some(attachment_id),
+        Some(reason.to_string()),
+    )
+    .await;
 
     redirect(&format!("/student/forum/threads/{}", ctx.thread_id))
 }
@@ -867,6 +1004,23 @@ pub async fn moderate_attachment(
         attachment_id,
         Some(ctx.thread_id),
         form.reason.as_deref(),
+    )
+    .await;
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "moderation",
+        "attachment_moderated",
+        "warning",
+        &actor,
+        Some("forum_attachment"),
+        Some(attachment_id),
+        form.reason.as_deref().map(|reason| reason.to_string()),
     )
     .await;
 
@@ -949,6 +1103,23 @@ pub async fn moderate_thread(
     )
     .await;
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "moderation",
+        "thread_moderated",
+        "warning",
+        &actor,
+        Some("forum_thread"),
+        Some(thread_id),
+        form.reason.as_deref().map(|reason| reason.to_string()),
+    )
+    .await;
+
     if matches!(action.as_str(), "delete" | "lock" | "unlock") && thread.created_by != user.id {
         insert_notification(
             db.get_ref(),
@@ -1017,6 +1188,23 @@ pub async fn moderate_post(
         post_id,
         Some(thread_id),
         form.reason.as_deref(),
+    )
+    .await;
+
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "moderation",
+        "reply_moderated",
+        "warning",
+        &actor,
+        Some("forum_post"),
+        Some(post_id),
+        form.reason.as_deref().map(|reason| reason.to_string()),
     )
     .await;
 
@@ -1947,6 +2135,28 @@ async fn edit_post(
             {
                 return redirect_with_message(&target, &message);
             }
+
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some(match required_role {
+                    UserRole::Student => "student".to_string(),
+                    UserRole::Lecturer => "lecturer".to_string(),
+                    UserRole::Admin => "admin".to_string(),
+                }),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db,
+                "content",
+                "reply_updated",
+                "warning",
+                &actor,
+                Some("forum_post"),
+                Some(post_id),
+                Some(format!("Edited reply in thread {thread_id}")),
+            )
+            .await;
+
             redirect(&target)
         }
         Ok(_) => HttpResponse::Forbidden().body("You can only edit your own active reply."),

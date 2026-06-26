@@ -7,6 +7,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tera::{Context, Tera};
 
+use crate::admin::{log_audit_event, AuditActor};
 use crate::auth::UserRole;
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -313,6 +314,23 @@ pub async fn upload_material(
         {
             return HttpResponse::InternalServerError().body(e.to_string());
         }
+
+        let actor = AuditActor {
+            user_id: Some(user.id),
+            role: Some("lecturer".to_string()),
+            display_name: None,
+        };
+        log_audit_event(
+            db.get_ref(),
+            "content",
+            "material_uploaded",
+            "info",
+            &actor,
+            Some("course_material"),
+            Some(course_id),
+            Some(format!("Uploaded {filename} for week {week_id}")),
+        )
+        .await;
     }
 
     HttpResponse::SeeOther()
@@ -661,6 +679,23 @@ pub async fn lecturer_settings_submit(
         return HttpResponse::InternalServerError().body(error.to_string());
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some("lecturer".to_string()),
+        display_name: None,
+    };
+    log_audit_event(
+        db.get_ref(),
+        "settings",
+        "lecturer_settings_saved",
+        "info",
+        &actor,
+        Some("preferences"),
+        Some(user.id),
+        Some(format!("Theme set to {theme_mode}")),
+    )
+    .await;
+
     let _ = session.insert("settings_success", "Settings saved.");
     let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
     HttpResponse::SeeOther()
@@ -925,7 +960,25 @@ pub async fn grade_submission(
     .await;
 
     match result {
-        Ok(_) => HttpResponse::Ok().json(json!({ "ok": true })),
+        Ok(_) => {
+            let actor = AuditActor {
+                user_id: Some(lecturer_id),
+                role: Some("lecturer".to_string()),
+                display_name: None,
+            };
+            log_audit_event(
+                db.get_ref(),
+                "course_management",
+                "submission_graded",
+                "warning",
+                &actor,
+                Some("submission"),
+                Some(submission_id),
+                Some(format!("Marked submission as graded with score {}", form.grade)),
+            )
+            .await;
+            HttpResponse::Ok().json(json!({ "ok": true }))
+        }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
@@ -1072,9 +1125,10 @@ pub async fn delete_assignment(
     session: Session,
     path: web::Path<i32>,
 ) -> impl Responder {
-    if crate::auth::require_role(&session, UserRole::Lecturer).is_err() {
-        return HttpResponse::Unauthorized().finish();
-    }
+    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
 
     let assignment_id = path.into_inner();
 
@@ -1106,7 +1160,25 @@ pub async fn delete_assignment(
         .execute(db.get_ref())
         .await
     {
-        Ok(_) => HttpResponse::Ok().json(json!({ "ok": true })),
+        Ok(_) => {
+            let actor = AuditActor {
+                user_id: Some(user.id),
+                role: Some("lecturer".to_string()),
+                display_name: Some(user.display_name.clone()),
+            };
+            log_audit_event(
+                db.get_ref(),
+                "course_management",
+                "assignment_deleted",
+                "warning",
+                &actor,
+                Some("assignment"),
+                Some(assignment_id),
+                Some("Deleted assignment".to_string()),
+            )
+            .await;
+            HttpResponse::Ok().json(json!({ "ok": true }))
+        }
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }

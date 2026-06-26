@@ -5,6 +5,8 @@ use serde::Deserialize;
 use sqlx::{FromRow, PgPool};
 use tera::{Context, Tera};
 
+use crate::admin::{log_audit_event, AuditActor};
+
 const SESSION_USER_ID: &str = "user_id";
 const SESSION_ROLE: &str = "role";
 const SESSION_DISPLAY_NAME: &str = "display_name";
@@ -116,6 +118,23 @@ pub async fn login_submit(
             .body(format!("Failed to create login session: {error}"));
     }
 
+    let actor = AuditActor {
+        user_id: Some(user.id),
+        role: Some(user.role.clone()),
+        display_name: Some(user.display_name.clone()),
+    };
+    log_audit_event(
+        db.get_ref(),
+        "auth",
+        "login_success",
+        "info",
+        &actor,
+        Some("session"),
+        Some(user.id),
+        Some(format!("Signed in as {}", user.role)),
+    )
+    .await;
+
     if user.must_change_password {
         // keep session, but force password change
         return redirect("/password/change");
@@ -147,10 +166,28 @@ pub async fn login_submit(
     builder.finish()
 }
 
-pub async fn logout(session: Session) -> HttpResponse {
+pub async fn logout(db: web::Data<PgPool>, session: Session) -> HttpResponse {
+    let actor = current_user(&session).ok().flatten().map(|user| AuditActor {
+        user_id: Some(user.id),
+        role: Some(user.role),
+        display_name: Some(user.display_name),
+    });
+    if let Some(actor) = actor.as_ref() {
+        log_audit_event(
+            db.get_ref(),
+            "auth",
+            "logout",
+            "info",
+            actor,
+            Some("session"),
+            actor.user_id,
+            Some("Signed out".to_string()),
+        )
+        .await;
+    }
     session.purge();
     HttpResponse::SeeOther()
-        .insert_header((header::LOCATION, "/"))
+    .insert_header((header::LOCATION, "/?logged_out=1"))
         .insert_header((header::SET_COOKIE, "lms-theme=; Path=/; Max-Age=0; SameSite=Lax"))
         .finish()
 }

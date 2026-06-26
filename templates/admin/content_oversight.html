@@ -17,26 +17,26 @@
 <div class="alert alert-danger border-0 shadow-sm">{{ content_error }}</div>
 {% endif %}
 
-<div class="course-stats-bar mb-4">
-  <div class="course-stat-item">
-    <div class="stat-label">Forum Threads</div>
-    <div class="stat-value">{{ total_threads }}</div>
+<div class="course-stats-bar mb-4" role="region" aria-label="Content moderation statistics">
+  <div class="course-stat-card primary">
+    <div class="course-stat-value">{{ total_threads }}</div>
+    <div class="course-stat-label">Forum Threads</div>
   </div>
-  <div class="course-stat-item">
-    <div class="stat-label">Hidden Threads</div>
-    <div class="stat-value">{{ hidden_threads }}</div>
+  <div class="course-stat-card success">
+    <div class="course-stat-value">{{ hidden_threads }}</div>
+    <div class="course-stat-label">Hidden Threads</div>
   </div>
-  <div class="course-stat-item">
-    <div class="stat-label">Locked Threads</div>
-    <div class="stat-value">{{ locked_threads }}</div>
+  <div class="course-stat-card">
+    <div class="course-stat-value">{{ locked_threads }}</div>
+    <div class="course-stat-label">Locked Threads</div>
   </div>
-  <div class="course-stat-item">
-    <div class="stat-label">Hidden Replies</div>
-    <div class="stat-value">{{ hidden_posts }}</div>
+  <div class="course-stat-card">
+    <div class="course-stat-value">{{ hidden_posts }}</div>
+    <div class="course-stat-label">Hidden Replies</div>
   </div>
 </div>
 
-<div class="card shadow-sm border-0 mb-4">
+<div class="card border-0 shadow-sm mb-4">
   <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
     <div>
       <h5 class="mb-0">Forum Threads</h5>
@@ -45,7 +45,7 @@
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
-      <thead>
+      <thead class="table-light">
         <tr>
           <th class="ps-4">Thread</th>
           <th>Course</th>
@@ -58,7 +58,7 @@
         {% for thread in threads %}
         <tr>
           <td class="ps-4" style="min-width: 320px;">
-            <div class="fw-semibold text-dark">{{ thread.title }}</div>
+            <div class="fw-semibold">{{ thread.title }}</div>
             <div class="text-muted small mt-1">{{ thread.body }}</div>
             <div class="text-muted small mt-2">{{ thread.reply_count }} replies · {{ thread.view_count }} views · {{ thread.created_at }}</div>
           </td>
@@ -79,7 +79,7 @@
               <span class="badge bg-dark-subtle text-dark border">Locked</span>
               {% endif %}
               {% if thread.is_pinned %}
-              <span class="badge bg-info-subtle text-info border">Pinned</span>
+              <span class="badge bg-primary-subtle text-primary border">Pinned</span>
               {% endif %}
               {% if thread.is_answered %}
               <span class="badge bg-success-subtle text-success border">Answered</span>
@@ -123,7 +123,7 @@
   </div>
 </div>
 
-<div class="card shadow-sm border-0">
+<div class="card border-0 shadow-sm">
   <div class="card-header bg-white border-bottom d-flex align-items-center justify-content-between py-3 px-4">
     <div>
       <h5 class="mb-0">Recent Replies</h5>
@@ -132,7 +132,7 @@
   </div>
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
-      <thead>
+      <thead class="table-light">
         <tr>
           <th class="ps-4">Reply</th>
           <th>Thread</th>
@@ -149,7 +149,7 @@
             <div class="text-muted small mt-2">{{ post.created_at }}</div>
           </td>
           <td>
-            <div class="fw-semibold text-dark">{{ post.thread_title }}</div>
+            <div class="fw-semibold">{{ post.thread_title }}</div>
           </td>
           <td>
             <div class="fw-semibold">{{ post.author }}</div>
@@ -159,7 +159,7 @@
             {% if post.deleted_at %}
             <span class="badge bg-danger-subtle text-danger border">Hidden</span>
             {% else %}
-            <span class="badge bg-light text-dark border">Visible</span>
+            <span class="badge bg-success-subtle text-success border">Visible</span>
             {% endif %}
           </td>
           <td class="pe-4">

@@ -67,6 +67,12 @@
             <h2 class="text-center mb-2">Login</h2>
             <p class="text-center text-muted small mb-4">Use your email and password to continue.</p>
 
+            {% if logout_message is defined %}
+            <div class="alert alert-success" role="alert">
+              {{ logout_message }}
+            </div>
+            {% endif %}
+
             {% if has_error %}
             <div class="alert alert-danger" role="alert">
               {{ error_message }}

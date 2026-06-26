@@ -29,10 +29,12 @@
       } catch (e) {}
     })();
   </script>
-  <link rel="stylesheet" href="/static/dark-theme.css" />
 
   <!-- Per-page extra CSS (optional) -->
   {% block extra_css %}{% endblock %}
+
+  <!-- Loaded last so dark-mode overrides win over page-level inline styles -->
+  <link rel="stylesheet" href="/static/dark-theme.css" />
 </head>
 
 <body class="lms-body notranslate" translate="no">
