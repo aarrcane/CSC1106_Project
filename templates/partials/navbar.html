@@ -98,11 +98,13 @@
             <i class="bi bi-person me-2"></i>Profile
           </a>
         </li>
+        {% if not is_admin %}
         <li>
-          <a class="dropdown-item" href="{% if is_admin %}/admin/settings{% elif is_lecturer %}/lecturer/settings{% else %}/student/settings{% endif %}">
+          <a class="dropdown-item" href="{% if is_lecturer %}/lecturer/settings{% else %}/student/settings{% endif %}">
             <i class="bi bi-gear me-2"></i>Settings
           </a>
         </li>
+        {% endif %}
         <li><hr class="dropdown-divider"></li>
         <li>
           <form method="post" action="/logout" class="mb-0">

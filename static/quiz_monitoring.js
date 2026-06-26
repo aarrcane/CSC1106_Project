@@ -65,10 +65,6 @@ if (root) {
   startButton?.addEventListener("click", startMonitoring);
   lockQuiz("Camera and microphone monitoring must be enabled before this quiz can be answered.");
 
-  submitButton?.addEventListener("click", () => {
-    window.alert("Mock quiz attempt submitted. Monitoring events are available for lecturer review.");
-  });
-
   enterQuizButton?.addEventListener("click", (event) => {
     if (enterQuizButton.getAttribute("aria-disabled") === "true") {
       event.preventDefault();

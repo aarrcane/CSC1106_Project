@@ -117,20 +117,182 @@ fn base_ctx(user: &crate::auth::CurrentUser, active: &str) -> Context {
 
 // ─── page handlers ────────────────────────────────────────────────────────────
 
-pub async fn lecturer_dashboard(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(u) => u,
+pub async fn lecturer_dashboard(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let (user, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
         Err(r) => return r,
     };
     let mut ctx = base_ctx(&user, "dashboard");
-    ctx.insert("assigned_courses_count", &0);
-    ctx.insert("student_count", &0);
-    ctx.insert("pending_grades_count", &0);
-    ctx.insert("forum_questions_count", &0);
-    ctx.insert("assigned_courses", &Vec::<String>::new());
-    ctx.insert("pending_submissions", &Vec::<String>::new());
-    ctx.insert("forum_questions", &Vec::<String>::new());
-    ctx.insert("upcoming_events", &Vec::<String>::new());
+
+    #[derive(Serialize, sqlx::FromRow)]
+    struct LecturerDashboardCourse {
+        code: String,
+        name: String,
+        term: String,
+        students: i64,
+        status: String,
+    }
+
+    #[derive(Serialize, sqlx::FromRow)]
+    struct PendingSubmissionSummary {
+        title: String,
+        course: String,
+        submitted_by: String,
+        due: String,
+        pending_count: i64,
+    }
+
+    #[derive(Serialize, sqlx::FromRow)]
+    struct ForumQuestionSummary {
+        title: String,
+        course: String,
+        author: String,
+        when: String,
+    }
+
+    #[derive(Serialize, sqlx::FromRow)]
+    struct UpcomingEvent {
+        title: String,
+        course: String,
+        when: String,
+    }
+
+    let assigned_courses = sqlx::query_as::<_, LecturerDashboardCourse>(
+        "SELECT
+            c.course_code AS code,
+            c.course_name AS name,
+            COALESCE(c.trimester, '') AS term,
+            COUNT(DISTINCT e.student_id) AS students,
+            COALESCE(c.status, 'Preparing') AS status
+         FROM courses c
+         LEFT JOIN enrollments e ON e.course_id = c.id
+         WHERE c.lecturer_id = $1
+         GROUP BY c.id, c.course_code, c.course_name, c.trimester, c.status
+         ORDER BY c.course_code",
+    )
+    .bind(lecturer_id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let assigned_courses_count = assigned_courses.len();
+    let student_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(DISTINCT e.student_id)
+         FROM enrollments e
+         JOIN courses c ON c.id = e.course_id
+         WHERE c.lecturer_id = $1",
+    )
+    .bind(lecturer_id)
+    .fetch_one(db.get_ref())
+    .await
+    .unwrap_or(0);
+    let pending_grades_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM submissions s
+         JOIN assignments a ON a.id = s.assignment_id
+         JOIN courses c ON c.id = a.course_id
+         WHERE c.lecturer_id = $1 AND s.status IN ('submitted', 'late')",
+    )
+    .bind(lecturer_id)
+    .fetch_one(db.get_ref())
+    .await
+    .unwrap_or(0);
+    let forum_questions_count = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*)
+         FROM forum_threads ft
+         JOIN courses c ON c.id = ft.course_id
+         WHERE c.lecturer_id = $1
+           AND ft.deleted_at IS NULL
+           AND ft.is_answered = FALSE",
+    )
+    .bind(lecturer_id)
+    .fetch_one(db.get_ref())
+    .await
+    .unwrap_or(0);
+
+    let pending_submissions = sqlx::query_as::<_, PendingSubmissionSummary>(
+        "SELECT
+            a.title,
+            c.course_code AS course,
+            COALESCE(MAX(u.display_name), 'Student') AS submitted_by,
+            TO_CHAR(a.due_date AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS due,
+            COUNT(s.id) AS pending_count
+         FROM submissions s
+         JOIN assignments a ON a.id = s.assignment_id
+         JOIN courses c ON c.id = a.course_id
+         JOIN students st ON st.id = s.student_id
+         JOIN users u ON u.id = st.user_id
+         WHERE c.lecturer_id = $1 AND s.status IN ('submitted', 'late')
+         GROUP BY a.id, a.title, c.course_code, a.due_date
+         ORDER BY MIN(s.submitted_at) DESC
+         LIMIT 5",
+    )
+    .bind(lecturer_id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let forum_questions = sqlx::query_as::<_, ForumQuestionSummary>(
+        "SELECT
+            ft.title,
+            c.course_code AS course,
+            u.display_name AS author,
+            TO_CHAR(ft.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon, HH24:MI') AS when
+         FROM forum_threads ft
+         JOIN courses c ON c.id = ft.course_id
+         JOIN users u ON u.id = ft.created_by
+         WHERE c.lecturer_id = $1
+           AND ft.deleted_at IS NULL
+           AND ft.is_answered = FALSE
+         ORDER BY ft.created_at DESC
+         LIMIT 5",
+    )
+    .bind(lecturer_id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let upcoming_events = sqlx::query_as::<_, UpcomingEvent>(
+        "SELECT title, course, when
+         FROM (
+            SELECT
+                a.title,
+                c.course_code AS course,
+                TO_CHAR(a.due_date AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS when,
+                a.due_date AS sort_at
+            FROM assignments a
+            JOIN courses c ON c.id = a.course_id
+            WHERE c.lecturer_id = $1 AND a.due_date >= NOW()
+            UNION ALL
+            SELECT
+                q.title,
+                c.course_code AS course,
+                TO_CHAR(q.close_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS when,
+                q.close_at AS sort_at
+            FROM quizzes q
+            JOIN courses c ON c.id = q.course_id
+            WHERE c.lecturer_id = $1 AND q.close_at >= NOW()
+         ) upcoming
+         ORDER BY sort_at
+         LIMIT 5",
+    )
+    .bind(lecturer_id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    ctx.insert("assigned_courses_count", &assigned_courses_count);
+    ctx.insert("student_count", &student_count);
+    ctx.insert("pending_grades_count", &pending_grades_count);
+    ctx.insert("forum_questions_count", &forum_questions_count);
+    ctx.insert("assigned_courses", &assigned_courses);
+    ctx.insert("pending_submissions", &pending_submissions);
+    ctx.insert("forum_questions", &forum_questions);
+    ctx.insert("upcoming_events", &upcoming_events);
     let rendered = match tmpl.render("lecturer/dashboard.html", &ctx) {
         Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
@@ -151,6 +313,16 @@ pub async fn lecturer_courses_page(
     };
 
     #[derive(Serialize)]
+    struct EnrolledStudentRow {
+        id: i32,
+        display_name: String,
+        email: String,
+        programme: String,
+        year_of_study: Option<i32>,
+        enrolled_at: String,
+    }
+
+    #[derive(Serialize)]
     struct CourseRow {
         id: i32,
         code: String,
@@ -158,16 +330,34 @@ pub async fn lecturer_courses_page(
         description: String,
         status: String,
         trimester: String,
+        enrolled_count: i64,
+        students: Vec<EnrolledStudentRow>,
     }
 
-    let courses = match sqlx::query_as!(
-        CourseRow,
+    #[derive(Serialize)]
+    struct CourseSummaryRow {
+        id: i32,
+        code: String,
+        name: String,
+        description: String,
+        status: String,
+        trimester: String,
+        enrolled_count: i64,
+    }
+
+    let course_rows = match sqlx::query_as!(
+        CourseSummaryRow,
         r#"SELECT id,
                   course_code                          AS code,
                   course_name                          AS name,
                   COALESCE(description, '')            AS "description!",
                   COALESCE(status, 'Preparing')        AS "status!",
-                  COALESCE(trimester, '')              AS "trimester!"
+                  COALESCE(trimester, '')              AS "trimester!",
+                  (
+                      SELECT COUNT(*)
+                      FROM enrollments e
+                      WHERE e.course_id = courses.id
+                  )                                   AS "enrolled_count!"
            FROM courses
            WHERE lecturer_id = $1
            ORDER BY created_at DESC"#,
@@ -179,6 +369,45 @@ pub async fn lecturer_courses_page(
         Ok(r) => r,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
+
+    let mut courses = Vec::with_capacity(course_rows.len());
+    for course in course_rows {
+        let students = match sqlx::query_as!(
+            EnrolledStudentRow,
+            r#"SELECT
+                   s.id,
+                   u.display_name,
+                   u.email,
+                   COALESCE(s.programme, '') AS "programme!",
+                   s.year_of_study,
+                   TO_CHAR(e.enrolled_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS "enrolled_at!"
+               FROM enrollments e
+               JOIN students s ON s.id = e.student_id
+               JOIN users u ON u.id = s.user_id
+               JOIN courses c ON c.id = e.course_id
+               WHERE e.course_id = $1 AND c.lecturer_id = $2
+               ORDER BY u.display_name ASC"#,
+            course.id,
+            lecturer_id
+        )
+        .fetch_all(db.get_ref())
+        .await
+        {
+            Ok(rows) => rows,
+            Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+        };
+
+        courses.push(CourseRow {
+            id: course.id,
+            code: course.code,
+            name: course.name,
+            description: course.description,
+            status: course.status,
+            trimester: course.trimester,
+            enrolled_count: course.enrolled_count,
+            students,
+        });
+    }
 
     let mut ctx = base_ctx(&user, "courses");
     ctx.insert("total_courses", &courses.len());

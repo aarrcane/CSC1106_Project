@@ -228,6 +228,73 @@
   .lms-toast.error {
     background: #dc2626;
   }
+
+  .enrollment-details {
+    margin-top: 0.75rem;
+    border: 1px solid var(--color-divider, #e5e7eb);
+    border-radius: 0.5rem;
+    background: #f8fafc;
+    overflow: hidden;
+  }
+
+  .enrollment-details summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 0.65rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .enrollment-details summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .enrollment-list {
+    border-top: 1px solid var(--color-divider, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .enrollment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border-bottom: 1px solid var(--color-divider, #e5e7eb);
+    font-size: 0.8125rem;
+  }
+
+  .enrollment-row:last-child {
+    border-bottom: 0;
+  }
+
+  .enrollment-name {
+    font-weight: 600;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+  }
+
+  .enrollment-meta {
+    color: var(--color-text-muted);
+    overflow-wrap: anywhere;
+  }
+
+  .enrollment-empty {
+    padding: 0.75rem;
+    color: var(--color-text-muted);
+    font-size: 0.8125rem;
+  }
+
+  @media (max-width: 640px) {
+    .enrollment-row {
+      grid-template-columns: 1fr;
+      gap: 0.25rem;
+    }
+  }
 </style>
 {% endblock %}
 
@@ -319,6 +386,39 @@
         </span>
       </div>
       {% endif %}
+      <div class="course-meta-row" style="margin-top:var(--space-1)">
+        <span class="course-meta-item">
+          <i data-lucide="users" width="12" height="12"></i>
+          {{ course.enrolled_count }} enrolled student{% if course.enrolled_count != 1 %}s{% endif %}
+        </span>
+      </div>
+
+      <details class="enrollment-details">
+        <summary>
+          <i data-lucide="list" width="14" height="14"></i>
+          View enrolled students
+        </summary>
+        {% if course.students | length > 0 %}
+        <div class="enrollment-list">
+          {% for student in course.students %}
+          <div class="enrollment-row">
+            <div>
+              <div class="enrollment-name">{{ student.display_name }}</div>
+              <div class="enrollment-meta">{{ student.email }}</div>
+            </div>
+            <div class="enrollment-meta">
+              {% if student.programme %}{{ student.programme }}{% else %}Programme not set{% endif %}
+              {% if student.year_of_study %} · Year {{ student.year_of_study }}{% endif %}
+              <br>
+              Enrolled {{ student.enrolled_at }}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="enrollment-empty">No students are enrolled in this course yet.</div>
+        {% endif %}
+      </details>
     </div>
     <div class="course-mgmt-card-footer">
       <button type="button" class="btn-lms btn-lms-primary btn-lms-sm"

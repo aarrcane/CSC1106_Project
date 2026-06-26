@@ -201,57 +201,6 @@ fn insert_student_base(ctx: &mut Context, display_name: &str, student_id: &str) 
     ctx.insert("notifications", &notifications);
 }
 
-fn mock_quiz_attempt(quiz_id: i32) -> Option<QuizContext> {
-    match quiz_id {
-        2 => Some(QuizContext {
-            id: 2,
-            title: "Quiz 2 - JavaScript Fundamentals".into(),
-            course_code: "CSC1106".into(),
-            course_name: "Web Programming".into(),
-            due_date: "28 May 2026".into(),
-            duration_mins: 25,
-            status: "open".into(),
-            score: None,
-            total_marks: 25,
-            attempt_allowed: 2,
-            attempts_used: 0,
-            urgent: true,
-        }),
-        _ => None,
-    }
-}
-
-fn mock_quiz_questions() -> Vec<QuizAttemptQuestionContext> {
-    vec![
-        QuizAttemptQuestionContext {
-            number: 1,
-            prompt: "Which keyword declares a block-scoped JavaScript variable?".into(),
-            options: vec!["var".into(), "let".into(), "static".into(), "global".into()],
-        },
-        QuizAttemptQuestionContext {
-            number: 2,
-            prompt: "Which browser API is commonly used to request JSON data asynchronously?"
-                .into(),
-            options: vec![
-                "Fetch API".into(),
-                "Canvas API".into(),
-                "Storage API".into(),
-                "History API".into(),
-            ],
-        },
-        QuizAttemptQuestionContext {
-            number: 3,
-            prompt: "What does DOM stand for?".into(),
-            options: vec![
-                "Document Object Model".into(),
-                "Data Object Map".into(),
-                "Display Output Method".into(),
-                "Document Order Mode".into(),
-            ],
-        },
-    ]
-}
-
 fn valid_monitoring_event_type(event_type: &str) -> bool {
     matches!(
         event_type,
@@ -797,8 +746,6 @@ async fn main() -> std::io::Result<()> {
                 web::post().to(admin::admin_reset_user_password),
             )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
-            .route("/admin/settings", web::get().to(admin::admin_settings_page))
-            .route("/admin/settings", web::post().to(admin::admin_settings_submit))
             .route("/admin/audit", web::get().to(admin::admin_audit_page))
             .route("/admin/course/create", web::post().to(admin::create_course))
             .route(

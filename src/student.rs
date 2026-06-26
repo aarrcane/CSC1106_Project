@@ -112,82 +112,256 @@ pub async fn student_dashboard(
     } else {
         ctx.insert("student_id", "");
     }
-    ctx.insert("current_trimester", "2025/26 Trimester 3");
-    ctx.insert("current_date", "Monday, 25 May 2026");
+    let current_trimester = if let Some(student_id) = student_id_opt {
+        sqlx::query_scalar::<_, String>(
+            "SELECT COALESCE(MAX(c.trimester), '') FROM enrollments e
+             JOIN courses c ON c.id = e.course_id
+             WHERE e.student_id = $1",
+        )
+        .bind(student_id)
+        .fetch_one(db.get_ref())
+        .await
+        .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let current_date = chrono::Local::now().format("%A, %d %B %Y").to_string();
+    ctx.insert("current_trimester", &current_trimester);
+    ctx.insert("current_date", &current_date);
 
-    // TODO: Replace with DB query: SELECT COUNT(*) FROM enrollments(?) WHERE student_id = ?
-    ctx.insert("enrolled_course_count", &3);
-    ctx.insert("avg_grade", &78);
-    ctx.insert("attendance_pct", &91);
-    ctx.insert("upcoming_deadlines", &2);
+    #[derive(sqlx::FromRow)]
+    struct DashboardStats {
+        enrolled_course_count: i64,
+        avg_grade: Option<f64>,
+        attended_sessions: i64,
+        total_sessions: i64,
+        upcoming_deadlines: i64,
+    }
+
+    let stats = if let Some(student_id) = student_id_opt {
+        sqlx::query_as::<_, DashboardStats>(
+            "SELECT
+                (SELECT COUNT(*) FROM enrollments WHERE student_id = $1) AS enrolled_course_count,
+                (SELECT AVG(grade)::float8 FROM final_grades WHERE student_id = $1 AND released_at IS NOT NULL) AS avg_grade,
+                (SELECT COUNT(*)
+                 FROM attendance_records ar
+                 JOIN attendance_sessions s ON s.id = ar.session_id
+                 JOIN enrollments e ON e.course_id = s.course_id AND e.student_id = ar.student_id
+                 WHERE ar.student_id = $1 AND ar.status IN ('present', 'late', 'excused')) AS attended_sessions,
+                (SELECT COUNT(*)
+                 FROM attendance_sessions s
+                 JOIN enrollments e ON e.course_id = s.course_id
+                 WHERE e.student_id = $1) AS total_sessions,
+                ((SELECT COUNT(*)
+                  FROM assignments a
+                  JOIN enrollments e ON e.course_id = a.course_id
+                  LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = e.student_id
+                  WHERE e.student_id = $1 AND sub.id IS NULL AND a.due_date >= NOW())
+                 +
+                 (SELECT COUNT(*)
+                  FROM quizzes q
+                  JOIN enrollments e ON e.course_id = q.course_id
+                  WHERE e.student_id = $1
+                    AND q.close_at >= NOW()
+                    AND NOT EXISTS (
+                        SELECT 1 FROM quiz_attempts qa
+                        WHERE qa.quiz_id = q.id AND qa.student_id = $1 AND qa.submitted_at IS NOT NULL
+                    ))) AS upcoming_deadlines",
+        )
+        .bind(student_id)
+        .fetch_one(db.get_ref())
+        .await
+        .unwrap_or(DashboardStats {
+            enrolled_course_count: 0,
+            avg_grade: None,
+            attended_sessions: 0,
+            total_sessions: 0,
+            upcoming_deadlines: 0,
+        })
+    } else {
+        DashboardStats {
+            enrolled_course_count: 0,
+            avg_grade: None,
+            attended_sessions: 0,
+            total_sessions: 0,
+            upcoming_deadlines: 0,
+        }
+    };
+    let avg_grade = stats.avg_grade.unwrap_or(0.0).round() as i32;
+    let attendance_pct = if stats.total_sessions > 0 {
+        ((stats.attended_sessions as f64 / stats.total_sessions as f64) * 100.0).round() as i32
+    } else {
+        0
+    };
+    ctx.insert("enrolled_course_count", &stats.enrolled_course_count);
+    ctx.insert("avg_grade", &avg_grade);
+    ctx.insert("attendance_pct", &attendance_pct);
+    ctx.insert("upcoming_deadlines", &stats.upcoming_deadlines);
 
     // Sidebar active page highlight
     ctx.insert("active_page", "dashboard");
 
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: true,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
-    ctx.insert("courses", &courses);
-    ctx.insert("trimesters", &vec!["2025/26 Trimester 3"]);
+    #[derive(sqlx::FromRow)]
+    struct DashboardCourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        trimester: String,
+        lecturer: String,
+        ongoing: bool,
+        attendance_pct: i32,
+    }
 
-    let announcements: Vec<crate::AnnouncementContext> = vec![crate::AnnouncementContext {
-        title: "Assignment 2 brief released".into(),
-        course: "CSC1106 – Web Programming".into(),
-        date: "24 May 2026".into(),
-    }];
+    let course_rows = if let Some(student_id) = student_id_opt {
+        sqlx::query_as::<_, DashboardCourseRow>(
+            "SELECT
+                c.id,
+                c.course_code AS code,
+                c.course_name AS name,
+                COALESCE(c.trimester, '') AS trimester,
+                COALESCE(u.display_name, 'TBA') AS lecturer,
+                (LOWER(COALESCE(c.status, '')) = 'ongoing') AS ongoing,
+                COALESCE(
+                    ROUND(
+                        COUNT(ar.id) FILTER (WHERE ar.status IN ('present', 'late', 'excused'))::NUMERIC
+                        * 100 / NULLIF(COUNT(s.id), 0)
+                    )::INT,
+                    0
+                ) AS attendance_pct
+             FROM enrollments e
+             JOIN courses c ON c.id = e.course_id
+             LEFT JOIN lecturers l ON l.id = c.lecturer_id
+             LEFT JOIN users u ON u.id = l.user_id
+             LEFT JOIN attendance_sessions s ON s.course_id = c.id
+             LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = e.student_id
+             WHERE e.student_id = $1
+             GROUP BY c.id, c.course_code, c.course_name, c.trimester, c.status, u.display_name
+             ORDER BY c.course_code",
+        )
+        .bind(student_id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let courses: Vec<crate::CourseContext> = course_rows
+        .iter()
+        .enumerate()
+        .map(|(index, row)| crate::CourseContext {
+            id: row.id,
+            code: row.code.clone(),
+            name: row.name.clone(),
+            trimester: row.trimester.clone(),
+            image_url: "".into(),
+            pinned: index == 0,
+            ongoing: row.ongoing,
+            progress: row.attendance_pct,
+            lecturer: row.lecturer.clone(),
+            attendance_pct: row.attendance_pct,
+        })
+        .collect();
+    ctx.insert("courses", &courses);
+    let trimesters: Vec<String> = courses
+        .iter()
+        .map(|course| course.trimester.clone())
+        .filter(|trimester| !trimester.is_empty())
+        .fold(Vec::new(), |mut acc, trimester| {
+            if !acc.contains(&trimester) {
+                acc.push(trimester);
+            }
+            acc
+        });
+    ctx.insert("trimesters", &trimesters);
+
+    let announcements: Vec<crate::AnnouncementContext> = if let Some(student_id) = student_id_opt {
+        sqlx::query_as::<_, (String, String, String)>(
+            "SELECT
+                a.title,
+                c.course_code || ' - ' || c.course_name AS course,
+                TO_CHAR(a.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS date
+             FROM announcements a
+             JOIN courses c ON c.id = a.course_id
+             JOIN enrollments e ON e.course_id = c.id
+             WHERE e.student_id = $1
+             ORDER BY a.created_at DESC
+             LIMIT 5",
+        )
+        .bind(student_id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(title, course, date)| crate::AnnouncementContext { title, course, date })
+        .collect()
+    } else {
+        Vec::new()
+    };
     ctx.insert("announcements", &announcements);
 
-    let due_dates: Vec<crate::DueDateContext> = vec![
-        crate::DueDateContext {
-            title: "Assignment 2 Submission".into(),
-            course: "CSC1106".into(),
-            item_type: "assignment".into(),
-            due_date: "28 May".into(),
-            urgent: true,
-        },
-        crate::DueDateContext {
-            title: "Quiz 3".into(),
-            course: "CSC1107".into(),
-            item_type: "quiz".into(),
-            due_date: "30 May".into(),
-            urgent: false,
-        },
-    ];
+    #[derive(sqlx::FromRow)]
+    struct DueDateRow {
+        title: String,
+        course: String,
+        item_type: String,
+        due_date: String,
+        urgent: bool,
+    }
+
+    let due_dates: Vec<crate::DueDateContext> = if let Some(student_id) = student_id_opt {
+        sqlx::query_as::<_, DueDateRow>(
+            "SELECT title, course, item_type, due_date, urgent
+             FROM (
+                SELECT
+                    a.title,
+                    c.course_code AS course,
+                    'assignment' AS item_type,
+                    TO_CHAR(a.due_date AT TIME ZONE 'Asia/Singapore', 'DD Mon') AS due_date,
+                    (a.due_date - NOW() < INTERVAL '3 days') AS urgent,
+                    a.due_date AS sort_at
+                FROM assignments a
+                JOIN enrollments e ON e.course_id = a.course_id
+                JOIN courses c ON c.id = a.course_id
+                LEFT JOIN submissions sub ON sub.assignment_id = a.id AND sub.student_id = e.student_id
+                WHERE e.student_id = $1 AND sub.id IS NULL AND a.due_date >= NOW()
+                UNION ALL
+                SELECT
+                    q.title,
+                    c.course_code AS course,
+                    'quiz' AS item_type,
+                    TO_CHAR(q.close_at AT TIME ZONE 'Asia/Singapore', 'DD Mon') AS due_date,
+                    (q.close_at - NOW() < INTERVAL '3 days') AS urgent,
+                    q.close_at AS sort_at
+                FROM quizzes q
+                JOIN enrollments e ON e.course_id = q.course_id
+                JOIN courses c ON c.id = q.course_id
+                WHERE e.student_id = $1
+                  AND q.close_at >= NOW()
+                  AND NOT EXISTS (
+                      SELECT 1 FROM quiz_attempts qa
+                      WHERE qa.quiz_id = q.id AND qa.student_id = $1 AND qa.submitted_at IS NOT NULL
+                  )
+             ) due_items
+             ORDER BY sort_at
+             LIMIT 5",
+        )
+        .bind(student_id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| crate::DueDateContext {
+            title: row.title,
+            course: row.course,
+            item_type: row.item_type,
+            due_date: row.due_date,
+            urgent: row.urgent,
+        })
+        .collect()
+    } else {
+        Vec::new()
+    };
     ctx.insert("due_dates", &due_dates);
 
     let rendered = match tmpl.render("student/dashboard.html", &ctx) {
@@ -489,106 +663,153 @@ pub async fn student_assignments_data(
     HttpResponse::Ok().json(result)
 }
 
-pub async fn student_grades(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+pub async fn student_grades(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
         Err(response) => return response,
     };
 
     let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
+    let student = match sqlx::query!("SELECT id FROM students WHERE user_id = $1", user.id)
+        .fetch_optional(db.get_ref())
+        .await
+    {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            crate::insert_student_base(&mut ctx, &user.display_name, "");
+            ctx.insert("active_page", "grades");
+            ctx.insert("course_grades", &Vec::<crate::CourseGradeContext>::new());
+            ctx.insert("overall_avg", &0);
+            ctx.insert("highest_grade", &0);
+            ctx.insert("at_risk_count", &0usize);
+            let rendered = match tmpl.render("student/grades.html", &ctx) {
+                Ok(html) => html,
+                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+            };
+            return HttpResponse::Ok().content_type("text/html").body(rendered);
+        }
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    crate::insert_student_base(&mut ctx, &user.display_name, &student.id.to_string());
     ctx.insert("active_page", "grades");
 
-    // TODO: replace with DB queries for actual grade data
-    let course_grades: Vec<crate::CourseGradeContext> = vec![
-        crate::CourseGradeContext {
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            overall: 82.0,
-            grade_letter: "A-".into(),
-            items: vec![
-                crate::GradeItemContext {
-                    title: "Assignment 1".into(),
-                    item_type: "assignment".into(),
-                    score: 82.0,
-                    max_score: 100.0,
-                    weight: 20.0,
-                },
-                crate::GradeItemContext {
-                    title: "Quiz 1".into(),
-                    item_type: "quiz".into(),
-                    score: 18.0,
-                    max_score: 20.0,
-                    weight: 10.0,
-                },
-                crate::GradeItemContext {
-                    title: "Midterm Exam".into(),
-                    item_type: "exam".into(),
-                    score: 38.0,
-                    max_score: 50.0,
-                    weight: 30.0,
-                },
-            ],
-        },
-        crate::CourseGradeContext {
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            overall: 74.0,
-            grade_letter: "B".into(),
-            items: vec![
-                crate::GradeItemContext {
-                    title: "Assignment 1".into(),
-                    item_type: "assignment".into(),
-                    score: 75.0,
-                    max_score: 100.0,
-                    weight: 20.0,
-                },
-                crate::GradeItemContext {
-                    title: "Quiz 2".into(),
-                    item_type: "quiz".into(),
-                    score: 14.0,
-                    max_score: 20.0,
-                    weight: 10.0,
-                },
-                crate::GradeItemContext {
-                    title: "Midterm Exam".into(),
-                    item_type: "exam".into(),
-                    score: 35.0,
-                    max_score: 50.0,
-                    weight: 30.0,
-                },
-            ],
-        },
-        crate::CourseGradeContext {
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            overall: 89.0,
-            grade_letter: "A".into(),
-            items: vec![
-                crate::GradeItemContext {
-                    title: "Lab Report 1".into(),
-                    item_type: "assignment".into(),
-                    score: 90.0,
-                    max_score: 100.0,
-                    weight: 20.0,
-                },
-                crate::GradeItemContext {
-                    title: "Quiz 1".into(),
-                    item_type: "quiz".into(),
-                    score: 19.0,
-                    max_score: 20.0,
-                    weight: 10.0,
-                },
-                crate::GradeItemContext {
-                    title: "Midterm Exam".into(),
-                    item_type: "exam".into(),
-                    score: 44.0,
-                    max_score: 50.0,
-                    weight: 30.0,
-                },
-            ],
-        },
-    ];
+    #[derive(sqlx::FromRow)]
+    struct CourseGradeRow {
+        id: i32,
+        code: String,
+        name: String,
+        overall: Option<f64>,
+        grade_scale: Option<String>,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct GradeItemRow {
+        title: String,
+        item_type: String,
+        score: f64,
+        max_score: f64,
+    }
+
+    let grade_rows = sqlx::query_as::<_, CourseGradeRow>(
+        "SELECT
+            c.id,
+            c.course_code AS code,
+            c.course_name AS name,
+            fg.grade::float8 AS overall,
+            fg.grade_scale
+         FROM enrollments e
+         JOIN courses c ON c.id = e.course_id
+         LEFT JOIN final_grades fg
+            ON fg.course_id = c.id AND fg.student_id = e.student_id AND fg.released_at IS NOT NULL
+         WHERE e.student_id = $1
+         ORDER BY c.course_code",
+    )
+    .bind(student.id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let mut course_grades: Vec<crate::CourseGradeContext> = Vec::new();
+    for course in grade_rows {
+        let items = sqlx::query_as::<_, GradeItemRow>(
+            "SELECT title, item_type, score, max_score
+             FROM (
+                SELECT
+                    a.title,
+                    'assignment' AS item_type,
+                    COALESCE(s.grade, 0)::float8 AS score,
+                    a.max_score::float8 AS max_score,
+                    COALESCE(s.submitted_at, a.due_date) AS sort_at
+                FROM assignments a
+                JOIN submissions s ON s.assignment_id = a.id AND s.student_id = $1
+                WHERE a.course_id = $2 AND s.status = 'graded' AND s.grade IS NOT NULL
+                UNION ALL
+                SELECT
+                    q.title,
+                    'quiz' AS item_type,
+                    COALESCE(qa.score, 0)::float8 AS score,
+                    q.total_marks::float8 AS max_score,
+                    COALESCE(qa.submitted_at, q.close_at) AS sort_at
+                FROM quizzes q
+                JOIN quiz_attempts qa ON qa.quiz_id = q.id AND qa.student_id = $1
+                WHERE q.course_id = $2 AND qa.submitted_at IS NOT NULL AND qa.score IS NOT NULL
+             ) grade_items
+             ORDER BY sort_at",
+        )
+        .bind(student.id)
+        .bind(course.id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default();
+
+        if course.overall.is_none() && items.is_empty() {
+            continue;
+        }
+
+        let item_contexts: Vec<crate::GradeItemContext> = items
+            .into_iter()
+            .map(|item| crate::GradeItemContext {
+                title: item.title,
+                item_type: item.item_type,
+                score: item.score as f32,
+                max_score: item.max_score as f32,
+                weight: 0.0,
+            })
+            .collect();
+
+        let overall = course.overall.unwrap_or_else(|| {
+            if item_contexts.is_empty() {
+                0.0
+            } else {
+                item_contexts
+                    .iter()
+                    .map(|item| {
+                        if item.max_score > 0.0 {
+                            item.score / item.max_score * 100.0
+                        } else {
+                            0.0
+                        }
+                    })
+                    .sum::<f32>() as f64
+                    / item_contexts.len() as f64
+            }
+        }) as f32;
+
+        course_grades.push(crate::CourseGradeContext {
+            code: course.code,
+            name: course.name,
+            overall,
+            grade_letter: course
+                .grade_scale
+                .unwrap_or_else(|| grade_letter_from_percentage(overall).to_string()),
+            items: item_contexts,
+        });
+    }
 
     // Derived summary stats
     let overall_avg = if course_grades.is_empty() {
@@ -615,63 +836,150 @@ pub async fn student_grades(tmpl: web::Data<Tera>, session: Session) -> impl Res
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn student_announcement(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
+fn grade_letter_from_percentage(score: f32) -> &'static str {
+    if score >= 85.0 {
+        "A"
+    } else if score >= 80.0 {
+        "A-"
+    } else if score >= 75.0 {
+        "B+"
+    } else if score >= 70.0 {
+        "B"
+    } else if score >= 65.0 {
+        "B-"
+    } else if score >= 60.0 {
+        "C+"
+    } else if score >= 55.0 {
+        "C"
+    } else if score >= 50.0 {
+        "D"
+    } else {
+        "F"
+    }
+}
+
+pub async fn student_announcement(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
     let user = match crate::auth::require_role(&session, UserRole::Student) {
         Ok(user) => user,
         Err(response) => return response,
     };
 
     let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
+    let student = match sqlx::query!("SELECT id FROM students WHERE user_id = $1", user.id)
+        .fetch_optional(db.get_ref())
+        .await
+    {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            crate::insert_student_base(&mut ctx, &user.display_name, "");
+            ctx.insert("active_page", "announcements");
+            ctx.insert("courses", &Vec::<crate::CourseContext>::new());
+            ctx.insert("announcements", &Vec::<crate::AnnouncementFullContext>::new());
+            let rendered = match tmpl.render("student/announcement.html", &ctx) {
+                Ok(html) => html,
+                Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+            };
+            return HttpResponse::Ok().content_type("text/html").body(rendered);
+        }
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    crate::insert_student_base(&mut ctx, &user.display_name, &student.id.to_string());
     ctx.insert("active_page", "announcements");
 
-    // TODO: replace with DB query for enrolled courses (used by filter dropdown)
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
+    #[derive(sqlx::FromRow)]
+    struct AnnouncementCourseRow {
+        id: i32,
+        code: String,
+        name: String,
+        trimester: String,
+        lecturer: String,
+        ongoing: bool,
+    }
+
+    let course_rows = sqlx::query_as::<_, AnnouncementCourseRow>(
+        "SELECT
+            c.id,
+            c.course_code AS code,
+            c.course_name AS name,
+            COALESCE(c.trimester, '') AS trimester,
+            COALESCE(u.display_name, 'TBA') AS lecturer,
+            (LOWER(COALESCE(c.status, '')) = 'ongoing') AS ongoing
+         FROM enrollments e
+         JOIN courses c ON c.id = e.course_id
+         LEFT JOIN lecturers l ON l.id = c.lecturer_id
+         LEFT JOIN users u ON u.id = l.user_id
+         WHERE e.student_id = $1
+         ORDER BY c.course_code",
+    )
+    .bind(student.id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    let courses: Vec<crate::CourseContext> = course_rows
+        .into_iter()
+        .map(|row| crate::CourseContext {
+            id: row.id,
+            code: row.code,
+            name: row.name,
+            trimester: row.trimester,
             image_url: "".into(),
             pinned: false,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
+            ongoing: row.ongoing,
+            progress: 0,
+            lecturer: row.lecturer,
+            attendance_pct: 0,
+        })
+        .collect();
     ctx.insert("courses", &courses);
 
-    // TODO: replace with DB query: SELECT * FROM announcements WHERE course_id IN (enrolled) ORDER BY date DESC
-    let announcements: Vec<crate::AnnouncementFullContext> = vec![
-		crate::AnnouncementFullContext { id: 1, title: "Assignment 2 brief released".into(), course: "Web Programming".into(), course_code: "CSC1106".into(), date: "24 May 2026".into(), content: "The brief for Assignment 2 has been uploaded to the course portal. Please review the requirements and submit by 28 May.".into(), is_new: true },
-		crate::AnnouncementFullContext { id: 2, title: "Midterm rescheduled to Week 8".into(), course: "Operating Systems".into(), course_code: "CSC1107".into(), date: "22 May 2026".into(), content: "Due to the public holiday, the midterm exam has been moved to Week 8. New date: 5 June 2026 at 10am.".into(), is_new: true },
-		crate::AnnouncementFullContext { id: 3, title: "Lab session cancelled this Friday".into(), course: "Database Systems".into(), course_code: "INF2003".into(), date: "20 May 2026".into(), content: "The lab session scheduled for Friday 23 May is cancelled. A replacement session will be arranged.".into(), is_new: false },
-	];
+    #[derive(sqlx::FromRow)]
+    struct AnnouncementRow {
+        id: i32,
+        title: String,
+        course: String,
+        course_code: String,
+        date: String,
+        content: String,
+        is_new: bool,
+    }
+
+    let announcements: Vec<crate::AnnouncementFullContext> =
+        sqlx::query_as::<_, AnnouncementRow>(
+            "SELECT
+                a.id,
+                a.title,
+                c.course_name AS course,
+                c.course_code,
+                TO_CHAR(a.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS date,
+                a.content,
+                (a.created_at >= NOW() - INTERVAL '7 days') AS is_new
+             FROM announcements a
+             JOIN courses c ON c.id = a.course_id
+             JOIN enrollments e ON e.course_id = c.id
+             WHERE e.student_id = $1
+             ORDER BY a.created_at DESC",
+        )
+        .bind(student.id)
+        .fetch_all(db.get_ref())
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|row| crate::AnnouncementFullContext {
+            id: row.id,
+            title: row.title,
+            course: row.course,
+            course_code: row.course_code,
+            date: row.date,
+            content: row.content,
+            is_new: row.is_new,
+        })
+        .collect();
     ctx.insert("announcements", &announcements);
 
     let rendered = match tmpl.render("student/announcement.html", &ctx) {
@@ -681,669 +989,6 @@ pub async fn student_announcement(tmpl: web::Data<Tera>, session: Session) -> im
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn student_quiz(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
-    ctx.insert("active_page", "quizzes");
-
-    // TODO: replace with DB query for enrolled courses (used by filter dropdown)
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
-    ctx.insert("courses", &courses);
-
-    // TODO: replace with DB query: SELECT * FROM quizzes JOIN enrollments WHERE student_id = ?
-    let quizzes: Vec<crate::QuizContext> = vec![
-        crate::QuizContext {
-            id: 1,
-            title: "Quiz 1 – HTML & CSS Basics".into(),
-            course_code: "CSC1106".into(),
-            course_name: "Web Programming".into(),
-            due_date: "10 Apr 2026".into(),
-            duration_mins: 20,
-            status: "completed".into(),
-            score: Some("18 / 20".into()),
-            total_marks: 20,
-            attempt_allowed: 1,
-            attempts_used: 1,
-            urgent: false,
-        },
-        crate::QuizContext {
-            id: 2,
-            title: "Quiz 2 – JavaScript Fundamentals".into(),
-            course_code: "CSC1106".into(),
-            course_name: "Web Programming".into(),
-            due_date: "28 May 2026".into(),
-            duration_mins: 25,
-            status: "open".into(),
-            score: None,
-            total_marks: 25,
-            attempt_allowed: 2,
-            attempts_used: 0,
-            urgent: true,
-        },
-        crate::QuizContext {
-            id: 3,
-            title: "Quiz 3 – Process Scheduling".into(),
-            course_code: "CSC1107".into(),
-            course_name: "Operating Systems".into(),
-            due_date: "30 May 2026".into(),
-            duration_mins: 30,
-            status: "upcoming".into(),
-            score: None,
-            total_marks: 30,
-            attempt_allowed: 1,
-            attempts_used: 0,
-            urgent: false,
-        },
-        crate::QuizContext {
-            id: 4,
-            title: "Quiz 1 – Relational Model".into(),
-            course_code: "INF2003".into(),
-            course_name: "Database Systems".into(),
-            due_date: "5 Apr 2026".into(),
-            duration_mins: 20,
-            status: "completed".into(),
-            score: Some("19 / 20".into()),
-            total_marks: 20,
-            attempt_allowed: 1,
-            attempts_used: 1,
-            urgent: false,
-        },
-        crate::QuizContext {
-            id: 5,
-            title: "Quiz 2 – Memory Management".into(),
-            course_code: "CSC1107".into(),
-            course_name: "Operating Systems".into(),
-            due_date: "2 Apr 2026".into(),
-            duration_mins: 20,
-            status: "missed".into(),
-            score: None,
-            total_marks: 20,
-            attempt_allowed: 1,
-            attempts_used: 0,
-            urgent: false,
-        },
-    ];
-    // Pre-compute stat-card counts (Tera doesn't support "in" or | list filters)
-    let quiz_open_count = quizzes.iter().filter(|q| q.status == "open").count();
-    let quiz_upcoming_count = quizzes
-        .iter()
-        .filter(|q| q.status == "upcoming" || q.status == "open")
-        .count();
-    let quiz_completed_count = quizzes.iter().filter(|q| q.status == "completed").count();
-    let quiz_missed_count = quizzes.iter().filter(|q| q.status == "missed").count();
-
-    ctx.insert("quizzes", &quizzes);
-    ctx.insert("quiz_open_count", &quiz_open_count);
-    ctx.insert("quiz_upcoming_count", &quiz_upcoming_count);
-    ctx.insert("quiz_completed_count", &quiz_completed_count);
-    ctx.insert("quiz_missed_count", &quiz_missed_count);
-
-    let rendered = match tmpl.render("student/quiz.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-pub async fn student_quiz_attempt(
-    path: web::Path<i32>,
-    tmpl: web::Data<Tera>,
-    session: Session,
-) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let quiz_id = path.into_inner();
-    let Some(quiz) = crate::mock_quiz_attempt(quiz_id) else {
-        return HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Quiz attempt is not available.");
-    };
-
-    if let Err(error) = session.insert(crate::quiz_monitoring_ready_key(quiz_id), false) {
-        return HttpResponse::InternalServerError()
-            .body(format!("Failed to reset quiz monitoring session: {error}"));
-    }
-
-    let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
-    ctx.insert("active_page", "quizzes");
-    ctx.insert("quiz", &quiz);
-    ctx.insert(
-        "monitoring_event_url",
-        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
-    );
-    ctx.insert(
-        "monitoring_ready_url",
-        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
-    );
-    ctx.insert(
-        "quiz_start_url",
-        &format!("/student/quizzes/{quiz_id}/take"),
-    );
-
-    let rendered = match tmpl.render("student/quiz_attempt.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-pub async fn student_quiz_take(
-    path: web::Path<i32>,
-    tmpl: web::Data<Tera>,
-    session: Session,
-) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let quiz_id = path.into_inner();
-    let Some(quiz) = crate::mock_quiz_attempt(quiz_id) else {
-        return HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Quiz attempt is not available.");
-    };
-
-    match crate::quiz_monitoring_ready(&session, quiz_id) {
-        Ok(true) => {}
-        Ok(false) => {
-            return HttpResponse::SeeOther()
-                .insert_header(("Location", format!("/student/quizzes/{quiz_id}/attempt")))
-                .finish();
-        }
-        Err(response) => return response,
-    }
-
-    let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
-    ctx.insert("active_page", "quizzes");
-    ctx.insert("quiz", &quiz);
-    ctx.insert("questions", &crate::mock_quiz_questions());
-    ctx.insert("quiz_seconds", &(quiz.duration_mins * 60));
-    ctx.insert(
-        "monitoring_event_url",
-        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
-    );
-    ctx.insert(
-        "monitoring_ready_url",
-        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
-    );
-
-    let rendered = match tmpl.render("student/quiz_take.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-pub async fn mark_quiz_monitoring_ready(path: web::Path<i32>, session: Session) -> impl Responder {
-    let _user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let quiz_id = path.into_inner();
-    if crate::mock_quiz_attempt(quiz_id).is_none() {
-        return HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Quiz attempt is not available.");
-    }
-
-    match session.insert(crate::quiz_monitoring_ready_key(quiz_id), true) {
-        Ok(_) => HttpResponse::Ok().json(crate::QuizMonitoringEventResponse { status: "ready" }),
-        Err(error) => HttpResponse::InternalServerError()
-            .body(format!("Failed to mark monitoring ready: {error}")),
-    }
-}
-
-pub async fn save_quiz_monitoring_event(
-    path: web::Path<i32>,
-    db: web::Data<PgPool>,
-    session: Session,
-    payload: web::Json<crate::QuizMonitoringEventPayload>,
-) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let quiz_id = path.into_inner();
-    if crate::mock_quiz_attempt(quiz_id).is_none() {
-        return HttpResponse::NotFound()
-            .content_type("text/plain")
-            .body("Quiz attempt is not available.");
-    }
-
-    let event_type = payload.event_type.trim().to_lowercase();
-    let severity = payload.severity.trim().to_lowercase();
-
-    if !crate::valid_monitoring_event_type(&event_type) {
-        return HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Unknown monitoring event type.");
-    }
-
-    if !crate::valid_monitoring_severity(&severity) {
-        return HttpResponse::BadRequest()
-            .content_type("text/plain")
-            .body("Unknown monitoring event severity.");
-    }
-
-    let details = crate::truncate_details(payload.details.as_deref());
-    let result = sqlx::query(
-        "INSERT INTO quiz_monitoring_events
-			(quiz_id, student_user_id, student_display_name, event_type, severity, details)
-		 VALUES ($1, $2, $3, $4, $5, $6)",
-    )
-    .bind(quiz_id)
-    .bind(user.id)
-    .bind(&user.display_name)
-    .bind(&event_type)
-    .bind(&severity)
-    .bind(details)
-    .execute(db.get_ref())
-    .await;
-
-    match result {
-        Ok(_) => HttpResponse::Ok().json(crate::QuizMonitoringEventResponse { status: "saved" }),
-        Err(error) => {
-            HttpResponse::InternalServerError().body(format!("Failed to save event: {error}"))
-        }
-    }
-}
-
-pub async fn student_attendance(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
-    ctx.insert("active_page", "attendance");
-
-    // TODO: replace with DB query for enrolled courses (filter dropdown)
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
-    ctx.insert("courses", &courses);
-
-    // TODO: replace with DB query: SELECT sessions, attendance_records WHERE student_id = ?
-    let attendance_courses: Vec<crate::AttendanceCourseContext> = vec![
-        crate::AttendanceCourseContext {
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            pct: 90,
-            attended: 9,
-            total: 10,
-            sessions: vec![
-                crate::AttendanceSessionContext {
-                    date: "5 Mar 2026".into(),
-                    topic: "Introduction to HTML".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "12 Mar 2026".into(),
-                    topic: "CSS Layouts & Flexbox".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "19 Mar 2026".into(),
-                    topic: "JavaScript Basics".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "26 Mar 2026".into(),
-                    topic: "DOM Manipulation".into(),
-                    status: "absent".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "2 Apr 2026".into(),
-                    topic: "Fetch API & AJAX".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "9 Apr 2026".into(),
-                    topic: "Forms & Validation".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "16 Apr 2026".into(),
-                    topic: "Responsive Design".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "23 Apr 2026".into(),
-                    topic: "Frameworks Overview".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "7 May 2026".into(),
-                    topic: "Backend Integration".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "14 May 2026".into(),
-                    topic: "Project Workshop".into(),
-                    status: "present".into(),
-                },
-            ],
-        },
-        crate::AttendanceCourseContext {
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            pct: 85,
-            attended: 11,
-            total: 13,
-            sessions: vec![
-                crate::AttendanceSessionContext {
-                    date: "4 Mar 2026".into(),
-                    topic: "OS Overview".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "11 Mar 2026".into(),
-                    topic: "Process Management".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "18 Mar 2026".into(),
-                    topic: "CPU Scheduling".into(),
-                    status: "late".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "25 Mar 2026".into(),
-                    topic: "Deadlocks".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "1 Apr 2026".into(),
-                    topic: "Memory Management".into(),
-                    status: "absent".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "8 Apr 2026".into(),
-                    topic: "Virtual Memory".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "15 Apr 2026".into(),
-                    topic: "File Systems".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "22 Apr 2026".into(),
-                    topic: "I/O Systems".into(),
-                    status: "absent".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "6 May 2026".into(),
-                    topic: "Security Basics".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "13 May 2026".into(),
-                    topic: "Virtualisation".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "20 May 2026".into(),
-                    topic: "Cloud OS Concepts".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "22 May 2026".into(),
-                    topic: "Revision Session".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "27 May 2026".into(),
-                    topic: "Exam Prep Q&A".into(),
-                    status: "present".into(),
-                },
-            ],
-        },
-        crate::AttendanceCourseContext {
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            pct: 95,
-            attended: 10,
-            total: 11,
-            sessions: vec![
-                crate::AttendanceSessionContext {
-                    date: "6 Mar 2026".into(),
-                    topic: "Relational Model".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "13 Mar 2026".into(),
-                    topic: "SQL Basics".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "20 Mar 2026".into(),
-                    topic: "Advanced SQL".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "27 Mar 2026".into(),
-                    topic: "Normalisation".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "3 Apr 2026".into(),
-                    topic: "ER Diagrams".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "10 Apr 2026".into(),
-                    topic: "Transactions & ACID".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "17 Apr 2026".into(),
-                    topic: "Indexing & Performance".into(),
-                    status: "excused".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "24 Apr 2026".into(),
-                    topic: "NoSQL Overview".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "8 May 2026".into(),
-                    topic: "Database Security".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "15 May 2026".into(),
-                    topic: "Lab: Schema Design".into(),
-                    status: "present".into(),
-                },
-                crate::AttendanceSessionContext {
-                    date: "22 May 2026".into(),
-                    topic: "Project Consultation".into(),
-                    status: "present".into(),
-                },
-            ],
-        },
-    ];
-
-    // Derive overall stats from the course data
-    let total_sessions: i32 = attendance_courses.iter().map(|c| c.total).sum();
-    let attended_sessions: i32 = attendance_courses.iter().map(|c| c.attended).sum();
-    let absent_sessions: i32 = attendance_courses
-        .iter()
-        .flat_map(|c| &c.sessions)
-        .filter(|s| s.status == "absent")
-        .count() as i32;
-    let overall_pct: i32 = if total_sessions > 0 {
-        (attended_sessions * 100) / total_sessions
-    } else {
-        0
-    };
-
-    ctx.insert("attendance_courses", &attendance_courses);
-    ctx.insert("total_sessions", &total_sessions);
-    ctx.insert("attended_sessions", &attended_sessions);
-    ctx.insert("absent_sessions", &absent_sessions);
-    ctx.insert("overall_pct", &overall_pct);
-
-    let rendered = match tmpl.render("student/attendance.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-pub async fn student_forum(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Student) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, "2501129");
-    ctx.insert("active_page", "forum");
-
-    // TODO: replace with DB query for enrolled courses (filter dropdown)
-    let courses: Vec<crate::CourseContext> = vec![
-        crate::CourseContext {
-            id: 1,
-            code: "CSC1106".into(),
-            name: "Web Programming".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 65,
-            lecturer: "Dr. Tan Wei Ming".into(),
-            attendance_pct: 90,
-        },
-        crate::CourseContext {
-            id: 2,
-            code: "CSC1107".into(),
-            name: "Operating Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 50,
-            lecturer: "Prof. Lim Ah Kow".into(),
-            attendance_pct: 85,
-        },
-        crate::CourseContext {
-            id: 3,
-            code: "INF2003".into(),
-            name: "Database Systems".into(),
-            trimester: "2025/26 Trimester 3".into(),
-            image_url: "".into(),
-            pinned: false,
-            ongoing: true,
-            progress: 72,
-            lecturer: "Dr. Ng Siew Lin".into(),
-            attendance_pct: 95,
-        },
-    ];
-    ctx.insert("courses", &courses);
-
-    // TODO: replace with DB query: SELECT * FROM forum_threads WHERE course_id IN (enrolled) ORDER BY last_reply_at DESC
-    let threads: Vec<crate::ThreadContext> = vec![
-		crate::ThreadContext { id: 1, title: "How do I centre a div vertically in CSS?".into(), course_code: "CSC1106".into(), course_name: "Web Programming".into(), author: "Lee Zhi Yu".into(), author_initials: "LZ".into(), created_at: "20 May 2026".into(), last_reply_at: "24 May 2026".into(), reply_count: 5, view_count: 42, is_pinned: false, is_answered: true, is_mine: true, tags: vec!["css".into(), "question".into()], preview: "I've been trying to vertically centre a div inside a full-height container but flexbox doesn't seem to work as expected. Any tips?".into() },
-		crate::ThreadContext { id: 2, title: "[PINNED] Assignment 2 – Clarifications & FAQ".into(), course_code: "CSC1106".into(), course_name: "Web Programming".into(), author: "Dr. Tan Wei Ming".into(), author_initials: "TW".into(), created_at: "24 May 2026".into(), last_reply_at: "25 May 2026".into(), reply_count: 12, view_count: 198, is_pinned: true, is_answered: false, is_mine: false, tags: vec!["announcement".into(), "assignment".into()], preview: "This thread collects all common questions about Assignment 2. Please read before posting a new question. Submission deadline: 28 May 2026.".into() },
-		crate::ThreadContext { id: 3, title: "Confused about the difference between paging and segmentation".into(), course_code: "CSC1107".into(), course_name: "Operating Systems".into(), author: "Aisha Rahman".into(), author_initials: "AR".into(), created_at: "22 May 2026".into(), last_reply_at: "23 May 2026".into(), reply_count: 3, view_count: 56, is_pinned: false, is_answered: false, is_mine: false, tags: vec!["os".into(), "question".into()], preview: "I'm trying to understand paging vs segmentation...".into() },
-	];
-    ctx.insert("threads", &threads);
-
-    let rendered = match tmpl.render("student/discussionforum.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
 
 pub async fn student_profile_page(
     tmpl: web::Data<Tera>,

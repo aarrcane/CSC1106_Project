@@ -132,66 +132,6 @@ struct AdminProfileDetails {
     admin_accounts: i64,
 }
 
-#[derive(Serialize, FromRow)]
-struct AdminPreferenceDetails {
-    email_notifications: bool,
-    course_notifications: bool,
-    forum_notifications: bool,
-    grade_notifications: bool,
-    theme_mode: String,
-}
-
-#[derive(Deserialize)]
-pub struct AdminPreferencesForm {
-    pub email_notifications: Option<String>,
-    pub course_notifications: Option<String>,
-    pub forum_notifications: Option<String>,
-    pub grade_notifications: Option<String>,
-    pub theme_mode: String,
-}
-
-async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS user_preferences (
-            user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-            email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
-            course_notifications BOOLEAN NOT NULL DEFAULT TRUE,
-            forum_notifications BOOLEAN NOT NULL DEFAULT TRUE,
-            grade_notifications BOOLEAN NOT NULL DEFAULT TRUE,
-            theme_mode VARCHAR(20) NOT NULL DEFAULT 'light' CHECK (theme_mode IN ('light', 'dark')),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )",
-    )
-    .execute(db)
-    .await
-    .map(|_| ())
-}
-
-async fn load_user_preferences(
-    db: &PgPool,
-    user_id: i32,
-) -> Result<AdminPreferenceDetails, sqlx::Error> {
-    ensure_user_preferences_table(db).await?;
-    sqlx::query(
-        "INSERT INTO user_preferences (user_id)
-         VALUES ($1)
-         ON CONFLICT (user_id) DO NOTHING",
-    )
-    .bind(user_id)
-    .execute(db)
-    .await?;
-
-    sqlx::query_as::<_, AdminPreferenceDetails>(
-        "SELECT email_notifications, course_notifications, forum_notifications,
-                grade_notifications, theme_mode
-         FROM user_preferences
-         WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(db)
-    .await
-}
-
 fn set_admin_base(ctx: &mut Context, user: &crate::auth::CurrentUser, active_page: &str) {
     ctx.insert("display_name", &user.display_name);
     ctx.insert("student_name", &user.display_name);
@@ -1322,90 +1262,32 @@ pub async fn admin_profile_page(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn admin_settings_page(
-    tmpl: web::Data<Tera>,
-    db: web::Data<PgPool>,
-    session: Session,
-) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Admin) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
-
-    let preferences = match load_user_preferences(db.get_ref(), user.id).await {
-        Ok(preferences) => preferences,
-        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
-    };
-
-    let mut ctx = Context::new();
-    set_admin_base(&mut ctx, &user, "settings");
-    ctx.insert("preferences", &preferences);
-    if let Ok(Some(message)) = session.get::<String>("settings_success") {
-        ctx.insert("settings_success", &message);
-        let _ = session.remove("settings_success");
-    }
-
-    let rendered = match tmpl.render("admin/settings.html", &ctx) {
-        Ok(html) => html,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
+async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error> {
+    sqlx::query_scalar::<_, i64>(sql)
+        .fetch_one(db)
+        .await
 }
 
-pub async fn admin_settings_submit(
-    db: web::Data<PgPool>,
-    session: Session,
-    form: web::Form<AdminPreferencesForm>,
-) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Admin) {
-        Ok(user) => user,
-        Err(response) => return response,
-    };
+#[derive(Serialize, FromRow)]
+struct DashboardContentPreview {
+    author: String,
+    kind: String,
+    title: String,
+    snippet: String,
+    when: String,
+}
 
-    let form = form.into_inner();
-    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
-
-    if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
-        return HttpResponse::InternalServerError().body(error.to_string());
-    }
-
-    let current_preferences = match load_user_preferences(db.get_ref(), user.id).await {
-        Ok(preferences) => preferences,
-        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
-    };
-
-    if let Err(error) = sqlx::query(
-        "INSERT INTO user_preferences (
-             user_id, email_notifications, course_notifications, forum_notifications,
-             grade_notifications, theme_mode, updated_at
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-         ON CONFLICT (user_id) DO UPDATE
-         SET email_notifications = EXCLUDED.email_notifications,
-             course_notifications = EXCLUDED.course_notifications,
-             forum_notifications = EXCLUDED.forum_notifications,
-             grade_notifications = EXCLUDED.grade_notifications,
-             theme_mode = EXCLUDED.theme_mode,
-             updated_at = NOW()",
-    )
-    .bind(user.id)
-    .bind(current_preferences.email_notifications)
-    .bind(current_preferences.course_notifications)
-    .bind(current_preferences.forum_notifications)
-    .bind(current_preferences.grade_notifications)
-    .bind(theme_mode)
-    .execute(db.get_ref())
-    .await
-    {
-        return HttpResponse::InternalServerError().body(error.to_string());
-    }
-
-    let _ = session.insert("settings_success", "Settings saved.");
-    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
-    HttpResponse::SeeOther()
-        .insert_header((actix_web::http::header::LOCATION, "/admin/settings"))
-        .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))
-        .finish()
+#[derive(Serialize, FromRow)]
+struct AuditEventEntry {
+    who: String,
+    actor_user_id: Option<i32>,
+    action: String,
+    details: Option<String>,
+    category: String,
+    severity: String,
+    target_type: Option<String>,
+    target_id: Option<i32>,
+    when_label: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -1476,34 +1358,6 @@ pub async fn admin_audit_page(
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(sql)
-        .fetch_one(db)
-        .await
-}
-
-#[derive(Serialize, FromRow)]
-struct DashboardContentPreview {
-    author: String,
-    kind: String,
-    title: String,
-    snippet: String,
-    when: String,
-}
-
-#[derive(Serialize, FromRow)]
-struct AuditEventEntry {
-    who: String,
-    actor_user_id: Option<i32>,
-    action: String,
-    details: Option<String>,
-    category: String,
-    severity: String,
-    target_type: Option<String>,
-    target_id: Option<i32>,
-    when_label: String,
 }
 
 async fn fetch_site_logs(

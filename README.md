@@ -15,7 +15,7 @@ Quick start
 cargo run
 ```
 
-3. Open https://127.0.0.1:8080/ in your browser.
+3. Open http://127.0.0.1:8080/ in your browser.
 
 Notes
 
