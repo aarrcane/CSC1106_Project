@@ -100,6 +100,7 @@
         </li>
         {% if not is_admin %}
         <li>
+          <a class="dropdown-item" href="{% if is_admin %}/admin/settings{% elif is_lecturer %}/lecturer/settings{% else %}/student/settings{% endif %}"></a>
           <a class="dropdown-item" href="{% if is_lecturer %}/lecturer/settings{% else %}/student/settings{% endif %}">
             <i class="bi bi-gear me-2"></i>Settings
           </a>
