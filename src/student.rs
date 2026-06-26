@@ -1006,7 +1006,7 @@ pub async fn student_profile_page(
              u.email,
              u.role,
              u.is_active,
-             to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+             to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
              s.id AS student_id,
              s.age,
              s.programme,

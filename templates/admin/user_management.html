@@ -472,7 +472,7 @@
       var iso = el.getAttribute('data-iso');
       if (!iso) return;
       try {
-        el.textContent = new Date(iso).toLocaleString();
+        el.textContent = new Date(iso).toLocaleString('en-GB', { timeZone: 'Asia/Singapore', dateStyle: 'medium', timeStyle: 'short' });
       } catch (e) {}
     });
 

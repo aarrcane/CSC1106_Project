@@ -239,8 +239,8 @@ pub async fn admin_users_page(
     let users = sqlx::query_as::<_, AdminUserListItem>(
         r#"SELECT u.id, u.display_name, u.email, u.role, u.is_active
          , u.must_change_password
-         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
-         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         , to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') as created_at_iso
+         , to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') as created_at
          , s.age
          , s.programme
          , s.year_of_study
@@ -523,8 +523,8 @@ pub async fn admin_toggle_user_active(
     let user = sqlx::query_as::<_, AdminUserListItem>(
         r#"SELECT u.id, u.display_name, u.email, u.role, u.is_active
          , u.must_change_password
-         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at_iso
-         , to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') as created_at
+         , to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') as created_at_iso
+         , to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') as created_at
          , s.age
          , s.programme
          , s.year_of_study
@@ -977,9 +977,9 @@ pub async fn admin_content_page(
                   ft.view_count,
                   ft.is_pinned,
                   ft.is_answered,
-                  CASE WHEN ft.locked_at IS NULL THEN NULL ELSE TO_CHAR(ft.locked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS locked_at,
-                  CASE WHEN ft.deleted_at IS NULL THEN NULL ELSE TO_CHAR(ft.deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
-                  TO_CHAR(ft.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS created_at
+                  CASE WHEN ft.locked_at IS NULL THEN NULL ELSE TO_CHAR(ft.locked_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') END AS locked_at,
+                  CASE WHEN ft.deleted_at IS NULL THEN NULL ELSE TO_CHAR(ft.deleted_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
+                  TO_CHAR(ft.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') AS created_at
            FROM forum_threads ft
            JOIN users u ON u.id = ft.created_by
            JOIN courses c ON c.id = ft.course_id
@@ -997,8 +997,8 @@ pub async fn admin_content_page(
                   LEFT(fp.body, 260) AS body,
                   u.display_name AS author,
                   u.role AS author_role,
-                  CASE WHEN fp.deleted_at IS NULL THEN NULL ELSE TO_CHAR(fp.deleted_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
-                  TO_CHAR(fp.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS created_at
+                  CASE WHEN fp.deleted_at IS NULL THEN NULL ELSE TO_CHAR(fp.deleted_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') END AS deleted_at,
+                  TO_CHAR(fp.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') AS created_at
            FROM forum_posts fp
            JOIN forum_threads ft ON ft.id = fp.thread_id
            JOIN users u ON u.id = fp.user_id
@@ -1294,7 +1294,7 @@ pub async fn admin_profile_page(
              u.email,
              u.role,
              u.is_active,
-             to_char(u.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
+             to_char(u.created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI:SS') AS created_at,
              u.id AS user_id,
              u.must_change_password,
              (SELECT COUNT(*)::BIGINT FROM users) AS total_users,
@@ -1523,7 +1523,7 @@ async fn fetch_site_logs(
               severity,
               target_type,
               target_id,
-              to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI') AS when_label
+              to_char(created_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD HH24:MI') AS when_label
            FROM audit_events
            WHERE ($1::text IS NULL OR category = $1)
              AND (
@@ -1683,7 +1683,7 @@ pub async fn admin_dashboard(
                  'Announcement' AS kind,
                  a.title AS title,
                  LEFT(a.content, 180) AS snippet,
-                 to_char(a.created_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 to_char(a.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS when_label,
                  a.created_at AS sort_at
              FROM announcements a
              LEFT JOIN users u ON u.id = a.posted_by
@@ -1695,7 +1695,7 @@ pub async fn admin_dashboard(
                  'Forum Post' AS kind,
                  ft.title AS title,
                  LEFT(ft.body, 180) AS snippet,
-                 to_char(ft.created_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 to_char(ft.created_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS when_label,
                  ft.created_at AS sort_at
              FROM forum_threads ft
              LEFT JOIN users u ON u.id = ft.created_by
@@ -1707,7 +1707,7 @@ pub async fn admin_dashboard(
                  'Uploaded Material' AS kind,
                  cm.title AS title,
                  LEFT(COALESCE(cm.description, cm.material_type, 'Course material uploaded.'), 180) AS snippet,
-                 to_char(cm.uploaded_at AT TIME ZONE 'UTC', 'DD Mon YYYY') AS when_label,
+                 to_char(cm.uploaded_at AT TIME ZONE 'Asia/Singapore', 'DD Mon YYYY') AS when_label,
                  cm.uploaded_at AS sort_at
              FROM course_materials cm
              LEFT JOIN users u ON u.id = cm.uploaded_by
