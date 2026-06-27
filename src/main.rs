@@ -23,6 +23,7 @@ mod lecturer;
 mod storage;
 mod student;
 mod student_quiz;
+mod student_practice;
 mod quiz_engine;
 use storage::SupabaseStorage;
 use crate::admin::{log_audit_event, AuditActor};
@@ -780,6 +781,7 @@ async fn main() -> std::io::Result<()> {
                 web::post().to(admin::unenroll_student),
             )
             .configure(quiz_engine::config)
+            .configure(student_practice::config)
     })
     .bind(("127.0.0.1", 8080))?
     .run()

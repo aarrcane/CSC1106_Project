@@ -39,6 +39,8 @@ pub struct QuizInput {
     pub serve_count: Option<i32>, // NULL = serve all
     #[serde(default = "default_attempts")]
     pub attempts_allowed: i32,
+    #[serde(default)]
+    pub is_practice: bool,
     pub questions: Vec<QuestionInput>,
 }
 
@@ -147,6 +149,7 @@ struct EditQuiz {
     close_at: String,
     serve_count: Option<i32>,
     attempts_allowed: i32,
+    is_practice: bool,
     questions: Vec<EditQuestion>,
 }
 
@@ -240,8 +243,8 @@ async fn insert_quiz(
     let mut tx = db.begin().await?;
     let quiz_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO quizzes
-               (course_id, created_by, title, description, open_at, close_at, total_marks, serve_count, attempts_allowed)
-           VALUES ($1, $2, $3, $4, CAST($5 AS TIMESTAMPTZ), CAST($6 AS TIMESTAMPTZ), $7, $8, $9)
+               (course_id, created_by, title, description, open_at, close_at, total_marks, serve_count, attempts_allowed, is_practice)
+           VALUES ($1, $2, $3, $4, CAST($5 AS TIMESTAMPTZ), CAST($6 AS TIMESTAMPTZ), $7, $8, $9, $10)
            RETURNING id"#,
     )
     .bind(input.course_id)
@@ -253,6 +256,7 @@ async fn insert_quiz(
     .bind(total_marks)
     .bind(input.serve_count)
     .bind(input.attempts_allowed)
+    .bind(input.is_practice)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -272,7 +276,7 @@ async fn update_quiz(
         r#"UPDATE quizzes
               SET course_id = $2, title = $3, description = $4,
                   open_at = CAST($5 AS TIMESTAMPTZ), close_at = CAST($6 AS TIMESTAMPTZ),
-                  total_marks = $7, serve_count = $8, attempts_allowed = $9
+                  total_marks = $7, serve_count = $8, attempts_allowed = $9, is_practice = $10
             WHERE id = $1"#,
     )
     .bind(quiz_id)
@@ -284,6 +288,7 @@ async fn update_quiz(
     .bind(total_marks)
     .bind(input.serve_count)
     .bind(input.attempts_allowed)
+    .bind(input.is_practice)
     .execute(&mut *tx)
     .await?;
 
@@ -424,9 +429,10 @@ pub async fn edit_form(
         close_at: String,
         serve_count: Option<i32>,
         attempts_allowed: i32,
+        is_practice: bool,
     }
     let head = match sqlx::query_as::<_, Head>(
-        r#"SELECT course_id, title, description, serve_count, attempts_allowed,
+        r#"SELECT course_id, title, description, serve_count, attempts_allowed, is_practice,
                   to_char(open_at,  'YYYY-MM-DD"T"HH24:MI') AS open_at,
                   to_char(close_at, 'YYYY-MM-DD"T"HH24:MI') AS close_at
              FROM quizzes WHERE id = $1"#,
@@ -493,6 +499,7 @@ pub async fn edit_form(
         close_at: head.close_at,
         serve_count: head.serve_count,
         attempts_allowed: head.attempts_allowed,
+        is_practice: head.is_practice,
         questions,
     };
     let courses = lecturer_courses(db.get_ref(), lecturer_id).await.unwrap_or_default();
@@ -713,7 +720,7 @@ mod tests {
     fn base() -> QuizInput {
         QuizInput { course_id: 1, title: "Q1".into(), description: None,
             open_at: "2026-06-20T10:00".into(), close_at: "2026-06-21T10:00".into(),
-            serve_count: None, attempts_allowed: 1, questions: vec![q()] }
+            serve_count: None, attempts_allowed: 1, is_practice: false, questions: vec![q()] }
     }
     #[test] fn totals() { let mut x = base(); x.questions.push(q()); assert_eq!(validate(&x).unwrap(), 10); }
     #[test] fn empty_title() { let mut x = base(); x.title = " ".into(); assert!(validate(&x).is_err()); }
