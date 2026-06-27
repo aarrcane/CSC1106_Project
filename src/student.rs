@@ -468,7 +468,7 @@ pub async fn student_courses(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-// ── ASSIGNMENTS ───────────────────────────────────────────────────────────────
+// ── ASSIGNMENTS 
 
 pub async fn student_assignments(
     tmpl: web::Data<Tera>,
@@ -542,7 +542,7 @@ pub async fn student_assignments(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-// ── ASSIGNMENTS DATA (JSON) ───────────────────────────────────────────────────
+// ── ASSIGNMENTS DATA (JSON) 
 
 pub async fn student_assignments_data(
     db: web::Data<PgPool>,
@@ -803,8 +803,7 @@ pub async fn student_grades(
             continue;
         }
 
-        // Equal-split weighting: every graded component carries an equal
-        // share of 100%, so the weights always sum to 100%.
+        // Equal-split weighting: every graded component gets an equal share of 100%.
         let item_weight = if items.is_empty() {
             0.0
         } else {
@@ -822,8 +821,7 @@ pub async fn student_grades(
             })
             .collect();
 
-        // Course overall is the weighted average of each component's
-        // percentage score. With equal weights this matches a plain average.
+        // Course overall: weighted average of each component's percentage score (equal weights = plain average).
         let overall = course.overall.map(|g| g as f32).unwrap_or_else(|| {
             item_contexts
                 .iter()

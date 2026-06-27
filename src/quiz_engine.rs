@@ -17,8 +17,7 @@ pub struct EngineQuestion {
 	pub options: Vec<EngineOption>,
 }
 
-// One answer choice (from `quiz_options`). Holds `is_correct` for server-side
-// grading, but that flag is hidden when the option is sent to the student.
+// One answer choice; `is_correct` is used for server-side grading and hidden from the student.
 #[derive(Debug, Clone, Serialize, FromRow)]
 pub struct EngineOption {
 	pub id: i32,
@@ -136,17 +135,14 @@ pub fn grade_attempt(
 	}
 }
 
-// Exponential moving average update of a topic proficiency in 0.0..=1.0.
-// `alpha` is the learning rate (how much the newest answer moves the estimate).
+// EWMA (Exponential Weighted Moving Average) update of a topic proficiency (0.0..=1.0); `alpha` controls how much the newest answer shifts the estimate.
 pub fn update_proficiency(current: f32, was_correct: bool, alpha: f32) -> f32 {
 	let target = if was_correct { 1.0 } else { 0.0 };
 	let next = current + alpha * (target - current);
 	next.clamp(0.0, 1.0)
 }
 
-// Map a proficiency estimate to the difficulty (1..=5) of the next question.
-// Weak students get easier questions; strong students get harder ones. The
-// `streak` (consecutive correct answers, negative for wrong) nudges it.
+// Map proficiency to target difficulty (1..=5); `streak` (positive = consecutive correct) nudges the result up or down.
 pub fn select_next_difficulty(proficiency: f32, streak: i32) -> i16 {
 	// proficiency 0.0..1.0 -> base band 1..5
 	let base = (proficiency * 4.0).round() as i32 + 1; // 1..=5
@@ -154,9 +150,7 @@ pub fn select_next_difficulty(proficiency: f32, streak: i32) -> i16 {
 	adjusted.clamp(1, 5) as i16
 }
 
-/// Pick the next question for an adaptive session: from the not-yet-answered
-/// pool, choose the one whose difficulty is closest to the target. Returns a
-/// reference index into `pool`, or None if the pool is empty.
+// Pick the index of the pool question whose difficulty is closest to target; None if pool is empty.
 pub fn pick_adaptive_index(pool: &[EngineQuestion], target_difficulty: i16) -> Option<usize> {
 	pool.iter()
 		.enumerate()
@@ -165,11 +159,7 @@ pub fn pick_adaptive_index(pool: &[EngineQuestion], target_difficulty: i16) -> O
 }
 
 
-// Select a `serve_count` subset whose difficulty mix is a fixed function of the
-// pool + serve_count, so every instance of the same quiz has the SAME average
-// difficulty. Counts per difficulty are allocated proportionally to availability
-// (largest-remainder, seed-independent); the seed only chooses WHICH questions
-// within a difficulty, giving variety without changing the average.
+// Select a serve_count subset with a fixed difficulty mix (largest-remainder allocation); seed only varies which questions per tier.
 pub fn select_balanced_subset_ids(pool: &[EngineQuestion], serve_count: usize, seed: u64) -> Vec<i32> {
     use std::collections::BTreeMap;
     let want = serve_count.min(pool.len());
@@ -240,12 +230,7 @@ pub fn select_balanced_subset_ids(pool: &[EngineQuestion], serve_count: usize, s
 }
 
 
-// Select up to `serve_count` questions for a PRACTICE attempt, favouring those
-// whose difficulty is closest to `target_difficulty`. The target is derived from
-// the student's current practice proficiency (higher proficiency -> higher
-// target -> harder questions). The seed shuffles within an equal-distance band
-// so repeated attempts at the same proficiency draw different questions while
-// keeping the same difficulty focus.
+// Select up to serve_count practice questions nearest to target_difficulty; seed shuffles ties for variety across retries.
 pub fn select_practice_subset_ids(
     pool: &[EngineQuestion],
     serve_count: usize,
@@ -259,8 +244,7 @@ pub fn select_practice_subset_ids(
 
     let mut idx: Vec<usize> = (0..pool.len()).collect();
 
-    // Seeded Fisher-Yates shuffle first, so questions at the same distance from
-    // the target appear in a varied order across attempts.
+    // Seeded Fisher-Yates shuffle so equal-distance questions appear in varied order across attempts.
     let mut st = seed ^ 0x9E37_79B9_7F4A_7C15;
     for i in (1..idx.len()).rev() {
         st = st
@@ -270,8 +254,7 @@ pub fn select_practice_subset_ids(
         idx.swap(i, j);
     }
 
-    // Stable sort by distance to the target difficulty keeps the shuffled order
-    // within each equal-distance group. Take the closest `want` questions.
+    // Stable sort by distance preserves shuffle order within ties; take the closest `want`.
     idx.sort_by_key(|&i| (pool[i].difficulty - target_difficulty).abs());
     idx.into_iter().take(want).map(|i| pool[i].id).collect()
 }
@@ -334,8 +317,7 @@ pub async fn load_questions(db: &PgPool, quiz_id: i32) -> Result<Vec<EngineQuest
 	Ok(questions)
 }
 
-// Load the questions (with options) that were served for a specific attempt,
-// in their stored order. Used for grading and the result breakdown.
+// Load the questions (with options) served for an attempt in stored order, for grading and result breakdown.
 pub async fn load_served_questions(
     db: &PgPool,
     attempt_id: i32,
@@ -386,9 +368,7 @@ pub async fn load_served_questions(
     Ok(questions)
 }
 
-// Finalize an in-progress attempt: set submitted_at/score/total_marks, store each
-// answer, and update topic proficiencies. The attempt row must already exist
-// (created when the student started the quiz).
+// Finalize an attempt: write submitted_at/score/total_marks, store answers, and update topic proficiencies.
 pub async fn persist_attempt(
     db: &PgPool,
     attempt_id: i32,
@@ -510,9 +490,7 @@ pub struct NextQuestionQuery {
 	pub streak: Option<i32>,
 }
 
-// GET /student/quizzes/{quiz_id}/next?answered=1,2&streak=1
-// Returns the next adaptive question (answer key stripped) based on the
-// student's proficiency in this course and their current streak.
+// GET /student/quizzes/{quiz_id}/next?answered=1,2&streak=1 — returns the next adaptive question based on proficiency and streak.
 pub async fn next_adaptive_question(
 	path: web::Path<i32>,
 	query: web::Query<NextQuestionQuery>,

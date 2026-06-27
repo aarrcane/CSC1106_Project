@@ -85,9 +85,7 @@ async fn in_progress_attempt(db: &PgPool, quiz_id: i32, student_id: i32) -> Resu
     .await
 }
 
-// Start a new attempt: pick a proficiency-targeted subset of the question pool
-// and freeze it into quiz_attempt_questions. Returns the new attempt id, or
-// None if the quiz has no questions.
+// Start a new attempt: freeze a proficiency-targeted question subset; returns the attempt id, or None if no questions.
 async fn create_attempt_with_subset(
     db: &PgPool,
     quiz_id: i32,
@@ -111,9 +109,7 @@ async fn create_attempt_with_subset(
         .unwrap_or(0)
         ^ (((student_id as u64) << 32) | quiz_id as u64);
 
-    // Difficulty mix is fixed by the pool + serve_count, so every instance of
-    // this quiz has the same average difficulty; the seed only varies WHICH
-    // questions appear within each difficulty.
+    // Difficulty mix is fixed by pool + serve_count; the seed only varies which questions appear within each tier.
     let ids = crate::quiz_engine::select_balanced_subset_ids(&pool, serve, seed);
 
     let mut tx = db.begin().await?;
@@ -416,9 +412,7 @@ pub async fn take(
         Err(resp) => return resp,
     }
 
-    // Resume an in-progress attempt, or start a new one. The served subset is
-    // frozen when the attempt is created, so a refresh or going back to an
-    // earlier question keeps the same questions.
+    // Resume an in-progress attempt or start a new one; the question subset is frozen at creation.
     let attempt_id = match in_progress_attempt(db.get_ref(), quiz_id, student_id).await {
         Ok(Some(id)) => id,
         Ok(None) => {

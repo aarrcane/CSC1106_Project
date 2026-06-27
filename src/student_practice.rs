@@ -41,8 +41,7 @@ async fn course_id_for_quiz(db: &PgPool, quiz_id: i32) -> Result<Option<i32>, sq
         .await
 }
 
-// Average practice proficiency across this student's topics in a course.
-// Defaults to 0.5 when the student has no practice history yet.
+// Average practice proficiency across this student's course topics; defaults to 0.5 with no history.
 async fn avg_practice_proficiency(db: &PgPool, student_id: i32, course_id: i32) -> f32 {
     sqlx::query_scalar::<_, Option<f32>>(
         r#"SELECT AVG(proficiency)::float4
@@ -95,8 +94,7 @@ fn level_for(p: f32) -> &'static str {
     }
 }
 
-// Create a new practice attempt: read current proficiency, pick a
-// difficulty-targeted subset from the bank, and freeze it. Returns attempt id.
+// Create a practice attempt: pick a difficulty-targeted subset from the bank, freeze it, return attempt id.
 async fn create_practice_attempt(
     db: &PgPool,
     quiz_id: i32,
@@ -156,8 +154,7 @@ fn render(tmpl: &Tera, name: &str, ctx: &Context) -> HttpResponse {
     }
 }
 
-// ── GET /student/practice ─────────────────────────────────────────────────────
-#[derive(Serialize)]
+// ── GET /student/practice 
 struct PracticeCard {
     id: i32,
     title: String,
@@ -254,7 +251,7 @@ pub async fn practice_list(
     render(&tmpl, "student/quiz_practice.html", &ctx)
 }
 
-// ── GET /student/practice/{quiz_id}/take ──────────────────────────────────────
+// ── GET /student/practice/{quiz_id}/take 
 #[derive(Serialize)]
 struct TakeOption {
     id: i32,
@@ -359,7 +356,7 @@ pub async fn take(
     render(&tmpl, "student/quiz_practice_take.html", &ctx)
 }
 
-// ── POST /student/practice/{quiz_id}/submit ──────────────────────────────────
+// ── POST /student/practice/{quiz_id}/submit
 #[derive(Deserialize)]
 pub struct AnswerInput {
     pub question_id: i32,
@@ -452,8 +449,7 @@ pub async fn submit(
     })
 }
 
-// Finalize a practice attempt and move the practice proficiency for each topic.
-// Records a before/after snapshot per topic so the result page can show the move.
+// Finalize a practice attempt, update per-topic proficiency, and record before/after snapshots for the result page.
 async fn persist_practice_attempt(
     db: &PgPool,
     attempt_id: i32,
@@ -552,7 +548,7 @@ async fn persist_practice_attempt(
     Ok(())
 }
 
-// ── GET /student/practice/{quiz_id}/result ────────────────────────────────────
+// ── GET /student/practice/{quiz_id}/result 
 #[derive(Serialize)]
 struct ResultQuestion {
     number: i32,

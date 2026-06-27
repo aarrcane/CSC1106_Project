@@ -1,2 +1,5 @@
 /target
 .env
+/docs
+sql/quiz_engine_seed.sql
+sql/seed_demo.sql
