@@ -142,7 +142,36 @@ pub async fn student_dashboard(
         sqlx::query_as::<_, DashboardStats>(
             "SELECT
                 (SELECT COUNT(*) FROM enrollments WHERE student_id = $1) AS enrolled_course_count,
-                (SELECT AVG(grade)::float8 FROM final_grades WHERE student_id = $1 AND released_at IS NOT NULL) AS avg_grade,
+                (SELECT AVG(course_pct)::float8
+                 FROM (
+                    SELECT COALESCE(fg.grade::float8, items.avg_pct) AS course_pct
+                    FROM enrollments e
+                    JOIN courses c ON c.id = e.course_id
+                    LEFT JOIN final_grades fg
+                        ON fg.course_id = c.id AND fg.student_id = e.student_id
+                        AND fg.released_at IS NOT NULL
+                    LEFT JOIN LATERAL (
+                        SELECT AVG(pct)::float8 AS avg_pct
+                        FROM (
+                            SELECT (s.grade::float8 / NULLIF(a.max_score, 0) * 100.0) AS pct
+                            FROM assignments a
+                            JOIN submissions s ON s.assignment_id = a.id
+                                AND s.student_id = e.student_id
+                            WHERE a.course_id = c.id AND s.status = 'graded'
+                                AND s.grade IS NOT NULL
+                            UNION ALL
+                            SELECT (MAX(qa.score)::float8 / NULLIF(q.total_marks, 0) * 100.0) AS pct
+                            FROM quizzes q
+                            JOIN quiz_attempts qa ON qa.quiz_id = q.id
+                                AND qa.student_id = e.student_id
+                            WHERE q.course_id = c.id AND qa.submitted_at IS NOT NULL
+                                AND qa.score IS NOT NULL
+                            GROUP BY q.id, q.total_marks
+                        ) per_item
+                    ) items ON TRUE
+                    WHERE e.student_id = $1
+                        AND (fg.grade IS NOT NULL OR items.avg_pct IS NOT NULL)
+                 ) course_scores) AS avg_grade,
                 (SELECT COUNT(*)
                  FROM attendance_records ar
                  JOIN attendance_sessions s ON s.id = ar.session_id
@@ -188,7 +217,7 @@ pub async fn student_dashboard(
             upcoming_deadlines: 0,
         }
     };
-    let avg_grade = stats.avg_grade.unwrap_or(0.0).round() as i32;
+    let avg_grade = stats.avg_grade.unwrap_or(0.0) as i32;
     let attendance_pct = if stats.total_sessions > 0 {
         ((stats.attended_sessions as f64 / stats.total_sessions as f64) * 100.0).round() as i32
     } else {
@@ -754,12 +783,13 @@ pub async fn student_grades(
                 SELECT
                     q.title,
                     'quiz' AS item_type,
-                    COALESCE(qa.score, 0)::float8 AS score,
+                    MAX(COALESCE(qa.score, 0))::float8 AS score,
                     q.total_marks::float8 AS max_score,
-                    COALESCE(qa.submitted_at, q.close_at) AS sort_at
+                    MAX(COALESCE(qa.submitted_at, q.close_at)) AS sort_at
                 FROM quizzes q
                 JOIN quiz_attempts qa ON qa.quiz_id = q.id AND qa.student_id = $1
                 WHERE q.course_id = $2 AND q.is_practice = FALSE AND qa.submitted_at IS NOT NULL AND qa.score IS NOT NULL
+                GROUP BY q.id, q.title, q.total_marks
              ) grade_items
              ORDER BY sort_at",
         )
@@ -773,6 +803,14 @@ pub async fn student_grades(
             continue;
         }
 
+        // Equal-split weighting: every graded component carries an equal
+        // share of 100%, so the weights always sum to 100%.
+        let item_weight = if items.is_empty() {
+            0.0
+        } else {
+            100.0 / items.len() as f32
+        };
+
         let item_contexts: Vec<crate::GradeItemContext> = items
             .into_iter()
             .map(|item| crate::GradeItemContext {
@@ -780,27 +818,25 @@ pub async fn student_grades(
                 item_type: item.item_type,
                 score: item.score as f32,
                 max_score: item.max_score as f32,
-                weight: 0.0,
+                weight: item_weight,
             })
             .collect();
 
-        let overall = course.overall.unwrap_or_else(|| {
-            if item_contexts.is_empty() {
-                0.0
-            } else {
-                item_contexts
-                    .iter()
-                    .map(|item| {
-                        if item.max_score > 0.0 {
-                            item.score / item.max_score * 100.0
-                        } else {
-                            0.0
-                        }
-                    })
-                    .sum::<f32>() as f64
-                    / item_contexts.len() as f64
-            }
-        }) as f32;
+        // Course overall is the weighted average of each component's
+        // percentage score. With equal weights this matches a plain average.
+        let overall = course.overall.map(|g| g as f32).unwrap_or_else(|| {
+            item_contexts
+                .iter()
+                .map(|item| {
+                    let pct = if item.max_score > 0.0 {
+                        item.score / item.max_score * 100.0
+                    } else {
+                        0.0
+                    };
+                    pct * item.weight / 100.0
+                })
+                .sum::<f32>()
+        });
 
         course_grades.push(crate::CourseGradeContext {
             code: course.code,

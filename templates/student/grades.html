@@ -135,7 +135,7 @@
                 </span>
               </td>
               <td class="small fw-semibold">{{ item.score }} / {{ item.max_score }}</td>
-              <td class="small text-muted">{{ item.weight }}%</td>
+              <td class="small text-muted">{{ item.weight | round(precision=1) }}%</td>
               <td>
                 <div class="d-flex align-items-center gap-2">
                   <div class="progress flex-grow-1" style="height:6px; border-radius:3px;">
