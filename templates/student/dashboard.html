@@ -101,13 +101,11 @@
           <div class="row g-3 pb-3">
             {% for course in courses %}
             <div class="col-12 col-sm-6 col-xl-4">
-              <a href="/student/courses/{{ course.id }}" class="text-decoration-none">
-                <div class="card course-card h-100 border-0 shadow-sm">
-                  <div class="course-card-img" style="background-image: url('{{ course.image_url }}');">
-                    {% if course.pinned %}
-                    <span class="course-pin-badge"><i class="bi bi-pin-fill"></i></span>
-                    {% endif %}
-                  </div>
+              <a href="/student/courses" class="text-decoration-none">
+                <div class="card course-card h-100 border-0 shadow-sm position-relative">
+                  {% if course.pinned %}
+                  <span class="course-pin-badge"><i class="bi bi-pin-fill"></i></span>
+                  {% endif %}
                   <div class="card-body pb-2">
                     <p class="course-code mb-1">{{ course.code }}</p>
                     <h6 class="fw-semibold course-title mb-1">{{ course.name }}</h6>
@@ -137,9 +135,8 @@
             {% for course in courses %}
             {% if course.ongoing %}
             <div class="col-12 col-sm-6 col-xl-4">
-              <a href="/student/courses/{{ course.id }}" class="text-decoration-none">
+              <a href="/student/courses" class="text-decoration-none">
                 <div class="card course-card h-100 border-0 shadow-sm">
-                  <div class="course-card-img" style="background-image: url('{{ course.image_url }}');"></div>
                   <div class="card-body">
                     <p class="course-code mb-1">{{ course.code }}</p>
                     <h6 class="fw-semibold course-title mb-1">{{ course.name }}</h6>
@@ -160,9 +157,8 @@
             {% for course in courses %}
             {% if course.trimester == trimester %}
             <div class="col-12 col-sm-6 col-xl-4">
-              <a href="/student/courses/{{ course.id }}" class="text-decoration-none">
+              <a href="/student/courses" class="text-decoration-none">
                 <div class="card course-card h-100 border-0 shadow-sm">
-                  <div class="course-card-img" style="background-image: url('{{ course.image_url }}');"></div>
                   <div class="card-body">
                     <p class="course-code mb-1">{{ course.code }}</p>
                     <h6 class="fw-semibold course-title mb-1">{{ course.name }}</h6>
