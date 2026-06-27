@@ -165,6 +165,81 @@ pub fn pick_adaptive_index(pool: &[EngineQuestion], target_difficulty: i16) -> O
 }
 
 
+// Select a `serve_count` subset whose difficulty mix is a fixed function of the
+// pool + serve_count, so every instance of the same quiz has the SAME average
+// difficulty. Counts per difficulty are allocated proportionally to availability
+// (largest-remainder, seed-independent); the seed only chooses WHICH questions
+// within a difficulty, giving variety without changing the average.
+pub fn select_balanced_subset_ids(pool: &[EngineQuestion], serve_count: usize, seed: u64) -> Vec<i32> {
+    use std::collections::BTreeMap;
+    let want = serve_count.min(pool.len());
+    if want == 0 {
+        return Vec::new();
+    }
+
+    // Group question indices by difficulty (ordered).
+    let mut by_diff: BTreeMap<i16, Vec<usize>> = BTreeMap::new();
+    for (i, q) in pool.iter().enumerate() {
+        by_diff.entry(q.difficulty).or_default().push(i);
+    }
+    let total = pool.len();
+
+    // Largest-remainder allocation proportional to each difficulty's share.
+    let mut alloc: BTreeMap<i16, usize> = BTreeMap::new();
+    let mut remainders: Vec<(f64, i16)> = Vec::new();
+    let mut assigned = 0usize;
+    for (&d, idxs) in by_diff.iter() {
+        let avail = idxs.len();
+        let exact = want as f64 * avail as f64 / total as f64;
+        let base = (exact.floor() as usize).min(avail);
+        alloc.insert(d, base);
+        assigned += base;
+        remainders.push((exact - exact.floor(), d));
+    }
+    // Hand out the leftover by largest fractional remainder (ties: lower diff).
+    remainders.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(&b.1)));
+    let mut leftover = want - assigned;
+    while leftover > 0 {
+        let mut placed = false;
+        for (_, d) in &remainders {
+            if leftover == 0 {
+                break;
+            }
+            let avail = by_diff[d].len();
+            let cur = alloc.get_mut(d).unwrap();
+            if *cur < avail {
+                *cur += 1;
+                leftover -= 1;
+                placed = true;
+            }
+        }
+        if !placed {
+            break;
+        }
+    }
+
+    // Seed-based shuffle within each difficulty, then take the allocated count.
+    let mut s = seed ^ 0x9E37_79B9_7F4A_7C15;
+    let mut chosen: Vec<i32> = Vec::with_capacity(want);
+    for (&d, idxs) in by_diff.iter() {
+        let take = *alloc.get(&d).unwrap_or(&0);
+        if take == 0 {
+            continue;
+        }
+        let mut local = idxs.clone();
+        for i in (1..local.len()).rev() {
+            s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let j = ((s >> 33) as usize) % (i + 1);
+            local.swap(i, j);
+        }
+        for &li in local.iter().take(take) {
+            chosen.push(pool[li].id);
+        }
+    }
+    chosen
+}
+
+
 // DB access
 
 // Resolve the students.id for the logged-in user, or None if not a student row.
@@ -222,78 +297,132 @@ pub async fn load_questions(db: &PgPool, quiz_id: i32) -> Result<Vec<EngineQuest
 	Ok(questions)
 }
 
-// Persist a graded attempt: create the attempt row, store each answer, set the
-// final score, and update topic proficiencies. Returns the new attempt id.
+// Load the questions (with options) that were served for a specific attempt,
+// in their stored order. Used for grading and the result breakdown.
+pub async fn load_served_questions(
+    db: &PgPool,
+    attempt_id: i32,
+) -> Result<Vec<EngineQuestion>, sqlx::Error> {
+    #[derive(FromRow)]
+    struct QRow {
+        id: i32,
+        question_text: String,
+        question_type: String,
+        marks: i32,
+        difficulty: i16,
+        topic: Option<String>,
+    }
+
+    let rows = sqlx::query_as::<_, QRow>(
+        r#"SELECT q.id, q.question_text, q.question_type, q.marks, q.difficulty, q.topic
+             FROM quiz_attempt_questions aq
+             JOIN quiz_questions q ON q.id = aq.question_id
+            WHERE aq.attempt_id = $1
+            ORDER BY aq.position"#,
+    )
+    .bind(attempt_id)
+    .fetch_all(db)
+    .await?;
+
+    let mut questions = Vec::with_capacity(rows.len());
+    for r in rows {
+        let options = sqlx::query_as::<_, EngineOption>(
+            r#"SELECT id, option_text, is_correct
+                 FROM quiz_options
+                WHERE question_id = $1
+                ORDER BY id"#,
+        )
+        .bind(r.id)
+        .fetch_all(db)
+        .await?;
+
+        questions.push(EngineQuestion {
+            id: r.id,
+            prompt: r.question_text,
+            question_type: r.question_type,
+            marks: r.marks,
+            difficulty: r.difficulty,
+            topic: r.topic,
+            options,
+        });
+    }
+    Ok(questions)
+}
+
+// Finalize an in-progress attempt: set submitted_at/score/total_marks, store each
+// answer, and update topic proficiencies. The attempt row must already exist
+// (created when the student started the quiz).
 pub async fn persist_attempt(
-	db: &PgPool,
-	quiz_id: i32,
-	student_id: i32,
-	course_id: i32,
-	submission: &AttemptSubmission,
-	result: &AttemptResult,
-) -> Result<i32, sqlx::Error> {
-	let mut tx = db.begin().await?;
+    db: &PgPool,
+    attempt_id: i32,
+    student_id: i32,
+    course_id: i32,
+    submission: &AttemptSubmission,
+    result: &AttemptResult,
+) -> Result<(), sqlx::Error> {
+    let mut tx = db.begin().await?;
 
-	// score is an integer count of marks; CAST in SQL so we can bind an i32
-	// rather than depend on rust_decimal for the NUMERIC column.
-	let attempt_id: i32 = sqlx::query_scalar(
-		r#"INSERT INTO quiz_attempts (quiz_id, student_id, submitted_at, score)
-		   VALUES ($1, $2, NOW(), CAST($3 AS NUMERIC))
-		   RETURNING id"#,
-	)
-	.bind(quiz_id)
-	.bind(student_id)
-	.bind(result.score)
-	.fetch_one(&mut *tx)
-	.await?;
+    // score/total are integer mark counts; CAST score so we can bind an i32.
+    sqlx::query(
+        r#"UPDATE quiz_attempts
+              SET submitted_at = NOW(),
+                  score        = CAST($2 AS NUMERIC),
+                  total_marks  = $3
+            WHERE id = $1"#,
+    )
+    .bind(attempt_id)
+    .bind(result.score)
+    .bind(result.total_marks)
+    .execute(&mut *tx)
+    .await?;
 
-	for g in &result.graded {
-		let sub = submission.answers.iter().find(|a| a.question_id == g.question_id);
-		sqlx::query(
-			r#"INSERT INTO quiz_answers
-			       (attempt_id, question_id, selected_option_id, is_correct)
-			   VALUES ($1, $2, $3, $4)"#,
-		)
-		.bind(attempt_id)
-		.bind(g.question_id)
-		.bind(sub.and_then(|s| s.selected_option_id))
-		.bind(g.is_correct)
-		.execute(&mut *tx)
-		.await?;
+    for g in &result.graded {
+        let sub = submission.answers.iter().find(|a| a.question_id == g.question_id);
+        sqlx::query(
+            r#"INSERT INTO quiz_answers
+                   (attempt_id, question_id, selected_option_id, is_correct)
+               VALUES ($1, $2, $3, $4)"#,
+        )
+        .bind(attempt_id)
+        .bind(g.question_id)
+        .bind(sub.and_then(|s| s.selected_option_id))
+        .bind(g.is_correct)
+        .execute(&mut *tx)
+        .await?;
 
-		// Update proficiency for the question's topic (EWMA upsert).
-		if let Some(topic) = &g.topic {
-			let current: Option<f32> = sqlx::query_scalar(
-				r#"SELECT proficiency::float4 FROM student_topic_proficiency
-				    WHERE student_id = $1 AND course_id = $2 AND topic = $3"#,
-			)
-			.bind(student_id)
-			.bind(course_id)
-			.bind(topic)
-			.fetch_optional(&mut *tx)
-			.await?;
+        // Update proficiency for the question's topic (EWMA upsert).
+        if let Some(topic) = &g.topic {
+            let current: Option<f32> = sqlx::query_scalar(
+                r#"SELECT proficiency::float4 FROM student_topic_proficiency
+                    WHERE student_id = $1 AND course_id = $2 AND topic = $3"#,
+            )
+            .bind(student_id)
+            .bind(course_id)
+            .bind(topic)
+            .fetch_optional(&mut *tx)
+            .await?;
 
-			let next = update_proficiency(current.unwrap_or(0.5), g.is_correct, 0.3);
-			sqlx::query(
-				r#"INSERT INTO student_topic_proficiency
-				       (student_id, course_id, topic, proficiency, answered_count, updated_at)
-				   VALUES ($1, $2, $3, CAST($4 AS NUMERIC), 1, NOW())
-				   ON CONFLICT (student_id, course_id, topic) DO UPDATE
-				     SET proficiency    = EXCLUDED.proficiency,
-				         answered_count = student_topic_proficiency.answered_count + 1,
-				         updated_at     = NOW()"#,
-			)
-			.bind(student_id)
-			.bind(course_id)
-			.bind(topic)
-			.bind(next as f64)
-			.execute(&mut *tx)
-			.await?;
-		}
-	}
+            let next = update_proficiency(current.unwrap_or(0.5), g.is_correct, 0.3);
+            sqlx::query(
+                r#"INSERT INTO student_topic_proficiency
+                       (student_id, course_id, topic, proficiency, answered_count, updated_at)
+                   VALUES ($1, $2, $3, CAST($4 AS NUMERIC), 1, NOW())
+                   ON CONFLICT (student_id, course_id, topic) DO UPDATE
+                     SET proficiency    = EXCLUDED.proficiency,
+                         answered_count = student_topic_proficiency.answered_count + 1,
+                         updated_at     = NOW()"#,
+            )
+            .bind(student_id)
+            .bind(course_id)
+            .bind(topic)
+            .bind(next as f64)
+            .execute(&mut *tx)
+            .await?;
+        }
+    }
 
-	tx.commit().await?;
-	Ok(attempt_id)
+    tx.commit().await?;
+    Ok(())
 }
 
 // Recommend course materials for the student's weakest topics in a course.
@@ -336,129 +465,7 @@ async fn course_id_for_quiz(db: &PgPool, quiz_id: i32) -> Result<Option<i32>, sq
 		.await
 }
 
-// Timing/limit info for one quiz. The open/close checks are computed in SQL
-// (`NOW()`) so we don't need a Rust timestamp type to compare them.
-#[derive(FromRow)]
-struct QuizGate {
-	is_before_open: bool,
-	is_after_close: bool,
-	attempts_allowed: i32,
-}
-
-// Fetch the attempt window + allowed-attempt count for a quiz.
-async fn quiz_gate(db: &PgPool, quiz_id: i32) -> Result<Option<QuizGate>, sqlx::Error> {
-	sqlx::query_as::<_, QuizGate>(
-		r#"SELECT (NOW() < open_at) AS is_before_open,
-		          (NOW() > close_at) AS is_after_close,
-		          attempts_allowed
-		     FROM quizzes
-		    WHERE id = $1"#,
-	)
-	.bind(quiz_id)
-	.fetch_optional(db)
-	.await
-}
-
-// Count how many attempts this student has already made on this quiz.
-async fn count_attempts(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<i64, sqlx::Error> {
-	sqlx::query_scalar::<_, i64>(
-		"SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2",
-	)
-	.bind(quiz_id)
-	.bind(student_id)
-	.fetch_one(db)
-	.await
-}
-
 // HTTP handlers
-
-#[derive(Serialize)]
-struct SubmitResponse {
-	attempt_id: i32,
-	result: AttemptResult,
-	recommendations: Vec<MaterialRecommendation>,
-}
-
-// POST /student/quizzes/{quiz_id}/submit
-// Grades the submitted answers, persists the attempt, updates proficiency,
-// and returns the score plus material recommendations for weak topics.
-pub async fn submit_quiz_attempt(
-	path: web::Path<i32>,
-	db: web::Data<PgPool>,
-	session: Session,
-	payload: web::Json<AttemptSubmission>,
-) -> impl Responder {
-	let user = match crate::auth::require_role(&session, UserRole::Student) {
-		Ok(user) => user,
-		Err(response) => return response,
-	};
-	let quiz_id = path.into_inner();
-
-	let student_id = match student_id_for_user(db.get_ref(), user.id).await {
-		Ok(Some(id)) => id,
-		Ok(None) => return HttpResponse::Forbidden().body("No student record for this user."),
-		Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-	};
-
-	let course_id = match course_id_for_quiz(db.get_ref(), quiz_id).await {
-		Ok(Some(id)) => id,
-		Ok(None) => return HttpResponse::NotFound().body("Quiz not found."),
-		Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-	};
-
-	// Enforce the attempt window and the attempt-count limit before grading.
-	let gate = match quiz_gate(db.get_ref(), quiz_id).await {
-		Ok(Some(g)) => g,
-		Ok(None) => return HttpResponse::NotFound().body("Quiz not found."),
-		Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-	};
-	if gate.is_before_open {
-		return HttpResponse::Forbidden().body("This quiz is not open yet.");
-	}
-	if gate.is_after_close {
-		return HttpResponse::Forbidden().body("This quiz has closed.");
-	}
-
-	let attempts_used = match count_attempts(db.get_ref(), quiz_id, student_id).await {
-		Ok(n) => n,
-		Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-	};
-	if attempts_used >= gate.attempts_allowed as i64 {
-		return HttpResponse::Forbidden().body("No attempts remaining for this quiz.");
-	}
-
-	let questions = match load_questions(db.get_ref(), quiz_id).await {
-		Ok(q) if !q.is_empty() => q,
-		Ok(_) => return HttpResponse::BadRequest().body("Quiz has no questions."),
-		Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-	};
-
-	let result = grade_attempt(&questions, &payload);
-
-	let attempt_id = match persist_attempt(
-		db.get_ref(),
-		quiz_id,
-		student_id,
-		course_id,
-		&payload,
-		&result,
-	)
-	.await
-	{
-		Ok(id) => id,
-		Err(e) => return HttpResponse::InternalServerError().body(format!("Save failed: {e}")),
-	};
-
-	let recommendations = recommend_materials(db.get_ref(), student_id, course_id, 0.6, 5)
-		.await
-		.unwrap_or_default();
-
-	HttpResponse::Ok().json(SubmitResponse {
-		attempt_id,
-		result,
-		recommendations,
-	})
-}
 
 #[derive(Deserialize)]
 pub struct NextQuestionQuery {
@@ -568,10 +575,6 @@ pub async fn quiz_recommendations(
 // Register engine routes. Call `.configure(quiz_engine::config)` in main.rs.
 pub fn config(cfg: &mut web::ServiceConfig) {
 	cfg.route(
-		"/student/quizzes/{quiz_id}/submit",
-		web::post().to(submit_quiz_attempt),
-	)
-	.route(
 		"/student/quizzes/{quiz_id}/next",
 		web::get().to(next_adaptive_question),
 	)
@@ -582,7 +585,7 @@ pub fn config(cfg: &mut web::ServiceConfig) {
 }
 
 
-// Unit tests for the pure logigitggggg
+// Unit tests for the pure log
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -652,4 +655,33 @@ mod tests {
 		assert_eq!(pick_adaptive_index(&pool, 5), Some(1));
 		assert_eq!(pick_adaptive_index(&pool, 1), Some(0));
 	}
+
+    #[test]
+    fn balanced_subset_same_average_difficulty_across_seeds() {
+        let mut pool = Vec::new();
+        let mut id = 1;
+        for d in 1..=5 {
+            for _ in 0..4 {
+                pool.push(mcq(id, 1, d as i16, id * 10));
+                id += 1;
+            }
+        }
+        let avg = |ids: &Vec<i32>| ids.iter()
+            .map(|c| pool.iter().find(|q| q.id == *c).unwrap().difficulty as f32)
+            .sum::<f32>() / ids.len() as f32;
+        let a = select_balanced_subset_ids(&pool, 10, 1);
+        let b = select_balanced_subset_ids(&pool, 10, 999);
+        assert_eq!(a.len(), 10);
+        assert_eq!(b.len(), 10);
+        // Identical average difficulty regardless of seed (the requirement).
+        assert!((avg(&a) - avg(&b)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn balanced_subset_clamps_to_pool_size() {
+        let pool: Vec<_> = (1..=3).map(|id| mcq(id, 1, 2, id * 10)).collect();
+        let ids = select_balanced_subset_ids(&pool, 10, 7);
+        assert_eq!(ids.len(), 3);
+    }
+
 }

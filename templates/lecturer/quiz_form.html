@@ -47,6 +47,14 @@
             <label class="form-label">Closes at</label>
             <input type="datetime-local" id="close_at" class="form-control" required>
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Questions to serve <span class="text-muted small">(blank = all)</span></label>
+            <input type="number" id="serve_count" class="form-control" min="1" placeholder="e.g. 10">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Attempts allowed</label>
+            <input type="number" id="attempts_allowed" class="form-control" min="1" value="1" required>
+          </div>
         </div>
       </div>
     </div>
@@ -82,16 +90,24 @@
         <textarea class="form-control q-text" rows="2"></textarea>
       </div>
       <div class="row g-3 mb-3">
-        <div class="col-md-6">
+        <div class="col-md-3">
           <label class="form-label">Type</label>
           <select class="form-select q-type">
             <option value="multiple_choice">Multiple choice</option>
             <option value="true_false">True / False</option>
           </select>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2">
           <label class="form-label">Marks</label>
           <input type="number" class="form-control q-marks" min="1" value="1">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Difficulty <span class="text-muted small">(1-5)</span></label>
+          <input type="number" class="form-control q-difficulty" min="1" max="5" value="1">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Topic</label>
+          <input type="text" class="form-control q-topic" placeholder="e.g. Loops">
         </div>
       </div>
       <label class="form-label">Options <span class="text-muted small">(select the correct one)</span></label>
@@ -177,6 +193,8 @@
       block.querySelector(".q-text").value = data.question_text || "";
       block.querySelector(".q-type").value = data.question_type || "multiple_choice";
       block.querySelector(".q-marks").value = data.marks || 1;
+      block.querySelector(".q-difficulty").value = data.difficulty || 1;
+      block.querySelector(".q-topic").value = data.topic || "";
       (data.options || []).forEach(o => wrap.appendChild(newOptionRow(groupId, o.option_text, o.is_correct)));
     } else {
       wrap.appendChild(newOptionRow(groupId, "", true));
@@ -211,6 +229,8 @@
         question_text: block.querySelector(".q-text").value.trim(),
         question_type: block.querySelector(".q-type").value,
         marks: parseInt(block.querySelector(".q-marks").value || "0", 10),
+        difficulty: parseInt(block.querySelector(".q-difficulty").value || "1", 10),
+        topic: block.querySelector(".q-topic").value.trim() || null,
         options,
       });
     }
@@ -220,6 +240,8 @@
       description: document.getElementById("description").value.trim() || null,
       open_at: document.getElementById("open_at").value,
       close_at: document.getElementById("close_at").value,
+      serve_count: parseInt(document.getElementById("serve_count").value, 10) || null,
+      attempts_allowed: parseInt(document.getElementById("attempts_allowed").value || "1", 10),
       questions,
     };
   }
@@ -265,6 +287,8 @@
     document.getElementById("open_at").value = QUIZ.open_at || "";
     document.getElementById("close_at").value = QUIZ.close_at || "";
     document.getElementById("course_id").value = QUIZ.course_id;
+    document.getElementById("attempts_allowed").value = QUIZ.attempts_allowed || 1;
+    if (QUIZ.serve_count != null) document.getElementById("serve_count").value = QUIZ.serve_count;
     (QUIZ.questions || []).forEach(q => addQuestion(q));
     if (!QUIZ.questions || QUIZ.questions.length === 0) addQuestion();
   } else {

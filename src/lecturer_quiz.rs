@@ -6,6 +6,9 @@ use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
+fn default_difficulty() -> i16 { 1 }
+fn default_attempts() -> i32 { 1 }
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct OptionInput {
     pub option_text: String,
@@ -17,6 +20,10 @@ pub struct QuestionInput {
     pub question_text: String,
     pub question_type: String, // 'multiple_choice' | 'true_false'
     pub marks: i32,
+    #[serde(default = "default_difficulty")]
+    pub difficulty: i16, // 1..5
+    #[serde(default)]
+    pub topic: Option<String>,
     pub options: Vec<OptionInput>,
 }
 
@@ -28,6 +35,10 @@ pub struct QuizInput {
     /// datetime-local strings e.g. "2026-06-20T10:00" (cast to TIMESTAMPTZ in SQL).
     pub open_at: String,
     pub close_at: String,
+    #[serde(default)]
+    pub serve_count: Option<i32>, // NULL = serve all
+    #[serde(default = "default_attempts")]
+    pub attempts_allowed: i32,
     pub questions: Vec<QuestionInput>,
 }
 
@@ -54,6 +65,9 @@ fn validate(input: &QuizInput) -> Result<i32, String> {
         if q.marks <= 0 {
             return Err(format!("Question {n}: marks must be greater than 0."));
         }
+        if q.difficulty < 1 || q.difficulty > 5 {
+            return Err(format!("Question {n}: difficulty must be between 1 and 5."));
+        }
         if q.options.len() < 2 {
             return Err(format!("Question {n}: needs at least two options."));
         }
@@ -64,6 +78,14 @@ fn validate(input: &QuizInput) -> Result<i32, String> {
             return Err(format!("Question {n}: every option needs text."));
         }
         total += q.marks;
+    }
+    if input.attempts_allowed < 1 {
+        return Err("Attempts allowed must be at least 1.".into());
+    }
+    if let Some(sc) = input.serve_count {
+        if sc < 1 || (sc as usize) > input.questions.len() {
+            return Err("Questions to serve must be between 1 and the number of questions.".into());
+        }
     }
     Ok(total)
 }
@@ -111,6 +133,8 @@ struct EditQuestion {
     question_text: String,
     question_type: String,
     marks: i32,
+    difficulty: i16,
+    topic: String,
     options: Vec<EditOption>,
 }
 #[derive(Debug, Serialize)]
@@ -121,6 +145,8 @@ struct EditQuiz {
     description: String,
     open_at: String,
     close_at: String,
+    serve_count: Option<i32>,
+    attempts_allowed: i32,
     questions: Vec<EditQuestion>,
 }
 
@@ -179,13 +205,15 @@ async fn insert_questions(
 ) -> Result<(), sqlx::Error> {
     for q in questions {
         let question_id: i32 = sqlx::query_scalar(
-            r#"INSERT INTO quiz_questions (quiz_id, question_text, question_type, marks)
-               VALUES ($1, $2, $3, $4) RETURNING id"#,
+            r#"INSERT INTO quiz_questions (quiz_id, question_text, question_type, marks, difficulty, topic)
+               VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"#,
         )
         .bind(quiz_id)
         .bind(q.question_text.trim())
         .bind(&q.question_type)
         .bind(q.marks)
+        .bind(q.difficulty)
+        .bind(q.topic.as_deref().map(|t| t.trim()).filter(|t| !t.is_empty()))
         .fetch_one(&mut **tx)
         .await?;
 
@@ -212,8 +240,8 @@ async fn insert_quiz(
     let mut tx = db.begin().await?;
     let quiz_id: i32 = sqlx::query_scalar(
         r#"INSERT INTO quizzes
-               (course_id, created_by, title, description, open_at, close_at, total_marks)
-           VALUES ($1, $2, $3, $4, CAST($5 AS TIMESTAMPTZ), CAST($6 AS TIMESTAMPTZ), $7)
+               (course_id, created_by, title, description, open_at, close_at, total_marks, serve_count, attempts_allowed)
+           VALUES ($1, $2, $3, $4, CAST($5 AS TIMESTAMPTZ), CAST($6 AS TIMESTAMPTZ), $7, $8, $9)
            RETURNING id"#,
     )
     .bind(input.course_id)
@@ -223,6 +251,8 @@ async fn insert_quiz(
     .bind(&input.open_at)
     .bind(&input.close_at)
     .bind(total_marks)
+    .bind(input.serve_count)
+    .bind(input.attempts_allowed)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -242,7 +272,7 @@ async fn update_quiz(
         r#"UPDATE quizzes
               SET course_id = $2, title = $3, description = $4,
                   open_at = CAST($5 AS TIMESTAMPTZ), close_at = CAST($6 AS TIMESTAMPTZ),
-                  total_marks = $7
+                  total_marks = $7, serve_count = $8, attempts_allowed = $9
             WHERE id = $1"#,
     )
     .bind(quiz_id)
@@ -252,6 +282,8 @@ async fn update_quiz(
     .bind(&input.open_at)
     .bind(&input.close_at)
     .bind(total_marks)
+    .bind(input.serve_count)
+    .bind(input.attempts_allowed)
     .execute(&mut *tx)
     .await?;
 
@@ -390,9 +422,11 @@ pub async fn edit_form(
         description: Option<String>,
         open_at: String,
         close_at: String,
+        serve_count: Option<i32>,
+        attempts_allowed: i32,
     }
     let head = match sqlx::query_as::<_, Head>(
-        r#"SELECT course_id, title, description,
+        r#"SELECT course_id, title, description, serve_count, attempts_allowed,
                   to_char(open_at,  'YYYY-MM-DD"T"HH24:MI') AS open_at,
                   to_char(close_at, 'YYYY-MM-DD"T"HH24:MI') AS close_at
              FROM quizzes WHERE id = $1"#,
@@ -411,9 +445,11 @@ pub async fn edit_form(
         question_text: String,
         question_type: String,
         marks: i32,
+        difficulty: i16,
+        topic: Option<String>,
     }
     let qrows = sqlx::query_as::<_, QRow>(
-        "SELECT id, question_text, question_type, marks FROM quiz_questions WHERE quiz_id = $1 ORDER BY id",
+        "SELECT id, question_text, question_type, marks, difficulty, topic FROM quiz_questions WHERE quiz_id = $1 ORDER BY id",
     )
     .bind(quiz_id)
     .fetch_all(db.get_ref())
@@ -439,6 +475,8 @@ pub async fn edit_form(
             question_text: r.question_text,
             question_type: r.question_type,
             marks: r.marks,
+            difficulty: r.difficulty,
+            topic: r.topic.unwrap_or_default(),
             options: opts
                 .into_iter()
                 .map(|o| EditOption { option_text: o.option_text, is_correct: o.is_correct })
@@ -453,6 +491,8 @@ pub async fn edit_form(
         description: head.description.unwrap_or_default(),
         open_at: head.open_at,
         close_at: head.close_at,
+        serve_count: head.serve_count,
+        attempts_allowed: head.attempts_allowed,
         questions,
     };
     let courses = lecturer_courses(db.get_ref(), lecturer_id).await.unwrap_or_default();
@@ -667,11 +707,13 @@ mod tests {
     fn opt(t: &str, c: bool) -> OptionInput { OptionInput { option_text: t.into(), is_correct: c } }
     fn q() -> QuestionInput {
         QuestionInput { question_text: "2+2?".into(), question_type: "multiple_choice".into(), marks: 5,
+            difficulty: 1, topic: None,
             options: vec![opt("4", true), opt("5", false)] }
     }
     fn base() -> QuizInput {
         QuizInput { course_id: 1, title: "Q1".into(), description: None,
-            open_at: "2026-06-20T10:00".into(), close_at: "2026-06-21T10:00".into(), questions: vec![q()] }
+            open_at: "2026-06-20T10:00".into(), close_at: "2026-06-21T10:00".into(),
+            serve_count: None, attempts_allowed: 1, questions: vec![q()] }
     }
     #[test] fn totals() { let mut x = base(); x.questions.push(q()); assert_eq!(validate(&x).unwrap(), 10); }
     #[test] fn empty_title() { let mut x = base(); x.title = " ".into(); assert!(validate(&x).is_err()); }
