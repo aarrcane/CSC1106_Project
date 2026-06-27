@@ -136,6 +136,8 @@ CREATE TABLE IF NOT EXISTS quizzes (
     open_at TIMESTAMPTZ NOT NULL,
     close_at TIMESTAMPTZ NOT NULL,
     total_marks INT NOT NULL,
+    serve_count INT,                       -- NULL = serve all questions
+    attempts_allowed INT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -156,7 +158,9 @@ CREATE TABLE IF NOT EXISTS quiz_questions (
     quiz_id INT NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
     question_text TEXT NOT NULL,
     question_type VARCHAR(20) NOT NULL CHECK (question_type IN ('multiple_choice', 'short_answer', 'true_false')),
-    marks INT NOT NULL
+    marks INT NOT NULL,
+    difficulty SMALLINT NOT NULL DEFAULT 1, -- 1..5
+    topic VARCHAR(120)
 );
 
 CREATE TABLE IF NOT EXISTS quiz_attempts (
@@ -165,7 +169,8 @@ CREATE TABLE IF NOT EXISTS quiz_attempts (
     student_id INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     submitted_at TIMESTAMPTZ,
-    score DECIMAL(5,2)
+    score DECIMAL(5,2),
+    total_marks INT                        -- marks possible for the served subset
 );
 
 CREATE TABLE IF NOT EXISTS quiz_options (
@@ -341,3 +346,12 @@ CREATE TABLE IF NOT EXISTS final_grade_history (
 
 CREATE INDEX IF NOT EXISTS idx_final_grades_course_student ON final_grades (course_id, student_id);
 CREATE INDEX IF NOT EXISTS idx_final_grade_history_final_grade_id ON final_grade_history (final_grade_id);
+
+-- Which questions were served for a given attempt (frozen at start so a refresh
+-- or going back to earlier questions keeps the same subset).
+CREATE TABLE IF NOT EXISTS quiz_attempt_questions (
+    attempt_id  INT NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    question_id INT NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
+    position    INT NOT NULL,
+    PRIMARY KEY (attempt_id, question_id)
+);

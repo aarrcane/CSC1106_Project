@@ -9,8 +9,7 @@ use crate::auth::UserRole;
 // Fixed default quiz timing
 const QUIZ_DURATION_MINS: i32 = 30;
 
-// Attempts permitted per student per quiz
-const ATTEMPTS_ALLOWED: i64 = 1;
+// Attempts allowed is configured per-quiz (quizzes.attempts_allowed).
 
 // DB Helpers
 
@@ -51,6 +50,13 @@ async fn quiz_gate(db: &PgPool, quiz_id: i32) -> Result<Option<QuizGate>, sqlx::
     .await
 }
 
+async fn course_id_for_quiz(db: &PgPool, quiz_id: i32) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>("SELECT course_id FROM quizzes WHERE id = $1")
+        .bind(quiz_id)
+        .fetch_optional(db)
+        .await
+}
+
 async fn attempts_used(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<i64, sqlx::Error> {
     sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NOT NULL",
@@ -59,6 +65,77 @@ async fn attempts_used(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<i64
     .bind(student_id)
     .fetch_one(db)
     .await
+}
+
+async fn attempts_allowed(db: &PgPool, quiz_id: i32) -> Result<i32, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>("SELECT attempts_allowed FROM quizzes WHERE id = $1")
+        .bind(quiz_id)
+        .fetch_one(db)
+        .await
+}
+
+// The in-progress (not yet submitted) attempt for this student+quiz, if any.
+async fn in_progress_attempt(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<Option<i32>, sqlx::Error> {
+    sqlx::query_scalar::<_, i32>(
+        "SELECT id FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NULL ORDER BY id DESC LIMIT 1",
+    )
+    .bind(quiz_id)
+    .bind(student_id)
+    .fetch_optional(db)
+    .await
+}
+
+// Start a new attempt: pick a proficiency-targeted subset of the question pool
+// and freeze it into quiz_attempt_questions. Returns the new attempt id, or
+// None if the quiz has no questions.
+async fn create_attempt_with_subset(
+    db: &PgPool,
+    quiz_id: i32,
+    student_id: i32,
+) -> Result<Option<i32>, sqlx::Error> {
+    let pool = crate::quiz_engine::load_questions(db, quiz_id).await?;
+    if pool.is_empty() {
+        return Ok(None);
+    }
+
+    let serve_cfg: Option<i32> =
+        sqlx::query_scalar::<_, Option<i32>>("SELECT serve_count FROM quizzes WHERE id = $1")
+            .bind(quiz_id)
+            .fetch_one(db)
+            .await?;
+    let serve = serve_cfg.map(|n| n.max(1) as usize).unwrap_or(pool.len());
+
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0)
+        ^ (((student_id as u64) << 32) | quiz_id as u64);
+
+    // Difficulty mix is fixed by the pool + serve_count, so every instance of
+    // this quiz has the same average difficulty; the seed only varies WHICH
+    // questions appear within each difficulty.
+    let ids = crate::quiz_engine::select_balanced_subset_ids(&pool, serve, seed);
+
+    let mut tx = db.begin().await?;
+    let attempt_id: i32 = sqlx::query_scalar(
+        "INSERT INTO quiz_attempts (quiz_id, student_id, started_at) VALUES ($1, $2, NOW()) RETURNING id",
+    )
+    .bind(quiz_id)
+    .bind(student_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    for (pos, qid) in ids.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO quiz_attempt_questions (attempt_id, question_id, position) VALUES ($1, $2, $3)",
+        )
+        .bind(attempt_id)
+        .bind(*qid)
+        .bind(pos as i32)
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(Some(attempt_id))
 }
 
 #[derive(FromRow)]
@@ -77,52 +154,6 @@ async fn quiz_meta(db: &PgPool, quiz_id: i32) -> Result<Option<QuizMeta>, sqlx::
     .bind(quiz_id)
     .fetch_optional(db)
     .await
-}
-
-// Internal question + options (includes is_correct for grading; never sent to client).
-struct GradeOption {
-    id: i32,
-    is_correct: bool,
-}
-struct GradeQuestion {
-    id: i32,
-    marks: i32,
-    options: Vec<GradeOption>,
-}
-
-async fn load_grade_questions(db: &PgPool, quiz_id: i32) -> Result<Vec<GradeQuestion>, sqlx::Error> {
-    #[derive(FromRow)]
-    struct QRow {
-        id: i32,
-        marks: i32,
-    }
-    let qrows = sqlx::query_as::<_, QRow>(
-        "SELECT id, marks FROM quiz_questions WHERE quiz_id = $1 ORDER BY id",
-    )
-    .bind(quiz_id)
-    .fetch_all(db)
-    .await?;
-
-    let mut out = Vec::with_capacity(qrows.len());
-    for r in qrows {
-        #[derive(FromRow)]
-        struct ORow {
-            id: i32,
-            is_correct: bool,
-        }
-        let opts = sqlx::query_as::<_, ORow>(
-            "SELECT id, is_correct FROM quiz_options WHERE question_id = $1 ORDER BY id",
-        )
-        .bind(r.id)
-        .fetch_all(db)
-        .await?;
-        out.push(GradeQuestion {
-            id: r.id,
-            marks: r.marks,
-            options: opts.into_iter().map(|o| GradeOption { id: o.id, is_correct: o.is_correct }).collect(),
-        });
-    }
-    Ok(out)
 }
 
 // GET /student/quizzes
@@ -167,6 +198,8 @@ pub async fn quiz_list(
         is_due_soon: bool,
         attempts_used: i64,
         last_score: Option<f32>,
+        last_total: Option<i32>,
+        attempts_allowed: i32,
     }
     let rows = sqlx::query_as::<_, Row>(
         r#"SELECT q.id, q.title, c.course_code, c.course_name, q.total_marks,
@@ -178,7 +211,11 @@ pub async fn quiz_list(
                      WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL) AS attempts_used,
                   (SELECT a.score::float4 FROM quiz_attempts a
                      WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL
-                     ORDER BY a.submitted_at DESC LIMIT 1) AS last_score
+                     ORDER BY a.submitted_at DESC LIMIT 1) AS last_score,
+                  (SELECT a.total_marks FROM quiz_attempts a
+                     WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL
+                     ORDER BY a.submitted_at DESC LIMIT 1) AS last_total,
+                  q.attempts_allowed
              FROM quizzes q
              JOIN courses c ON c.id = q.course_id
              JOIN enrollments e ON e.course_id = c.id
@@ -203,7 +240,7 @@ pub async fn quiz_list(
             } else {
                 "open"
             };
-            let score = r.last_score.map(|s| format!("{} / {}", s.round() as i32, r.total_marks));
+            let score = r.last_score.map(|s| format!("{} / {}", s.round() as i32, r.last_total.unwrap_or(r.total_marks)));
             crate::QuizContext {
                 id: r.id,
                 title: r.title.clone(),
@@ -214,7 +251,7 @@ pub async fn quiz_list(
                 status: status.into(),
                 score,
                 total_marks: r.total_marks,
-                attempt_allowed: ATTEMPTS_ALLOWED as i32,
+                attempt_allowed: r.attempts_allowed,
                 attempts_used: r.attempts_used as i32,
                 urgent: status == "open" && r.is_due_soon,
             }
@@ -379,16 +416,33 @@ pub async fn take(
         Err(resp) => return resp,
     }
 
-    // Already used all attempts -> go to result.
-    match attempts_used(db.get_ref(), quiz_id, student_id).await {
-        Ok(n) if n >= ATTEMPTS_ALLOWED => {
-            return HttpResponse::SeeOther()
-                .insert_header(("Location", format!("/student/quizzes/{quiz_id}/result")))
-                .finish();
+    // Resume an in-progress attempt, or start a new one. The served subset is
+    // frozen when the attempt is created, so a refresh or going back to an
+    // earlier question keeps the same questions.
+    let attempt_id = match in_progress_attempt(db.get_ref(), quiz_id, student_id).await {
+        Ok(Some(id)) => id,
+        Ok(None) => {
+            let used = match attempts_used(db.get_ref(), quiz_id, student_id).await {
+                Ok(n) => n,
+                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+            };
+            let allowed = match attempts_allowed(db.get_ref(), quiz_id).await {
+                Ok(n) => n,
+                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+            };
+            if used >= allowed as i64 {
+                return HttpResponse::SeeOther()
+                    .insert_header(("Location", format!("/student/quizzes/{quiz_id}/result")))
+                    .finish();
+            }
+            match create_attempt_with_subset(db.get_ref(), quiz_id, student_id).await {
+                Ok(Some(id)) => id,
+                Ok(None) => return HttpResponse::BadRequest().body("This quiz has no questions yet."),
+                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+            }
         }
-        Ok(_) => {}
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-    }
+    };
 
     let meta = match quiz_meta(db.get_ref(), quiz_id).await {
         Ok(Some(m)) => m,
@@ -396,47 +450,30 @@ pub async fn take(
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
     };
 
-    // Load questions + options (student-facing: no is_correct).
-    #[derive(FromRow)]
-    struct QRow {
-        id: i32,
-        question_text: String,
-        question_type: String,
-    }
-    let qrows = sqlx::query_as::<_, QRow>(
-        "SELECT id, question_text, question_type FROM quiz_questions WHERE quiz_id = $1 ORDER BY id",
-    )
-    .bind(quiz_id)
-    .fetch_all(db.get_ref())
-    .await
-    .unwrap_or_default();
-
-    let mut questions = Vec::with_capacity(qrows.len());
-    for (i, r) in qrows.into_iter().enumerate() {
-        #[derive(FromRow)]
-        struct ORow {
-            id: i32,
-            option_text: String,
-        }
-        let opts = sqlx::query_as::<_, ORow>(
-            "SELECT id, option_text FROM quiz_options WHERE question_id = $1 ORDER BY id",
-        )
-        .bind(r.id)
-        .fetch_all(db.get_ref())
-        .await
-        .unwrap_or_default();
-        questions.push(TakeQuestion {
-            id: r.id,
-            number: (i + 1) as i32,
-            question_text: r.question_text,
-            question_type: r.question_type,
-            options: opts.into_iter().map(|o| TakeOption { id: o.id, option_text: o.option_text }).collect(),
-        });
-    }
-
-    if questions.is_empty() {
+    // Load the served questions for this attempt (student-facing: no is_correct).
+    let served = match crate::quiz_engine::load_served_questions(db.get_ref(), attempt_id).await {
+        Ok(q) => q,
+        Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+    };
+    if served.is_empty() {
         return HttpResponse::BadRequest().body("This quiz has no questions yet.");
     }
+    let served_total: i32 = served.iter().map(|q| q.marks).sum();
+    let questions: Vec<TakeQuestion> = served
+        .iter()
+        .enumerate()
+        .map(|(i, q)| TakeQuestion {
+            id: q.id,
+            number: (i + 1) as i32,
+            question_text: q.prompt.clone(),
+            question_type: q.question_type.clone(),
+            options: q
+                .options
+                .iter()
+                .map(|o| TakeOption { id: o.id, option_text: o.option_text.clone() })
+                .collect(),
+        })
+        .collect();
 
     let quiz = QuizHeader {
         id: quiz_id,
@@ -444,7 +481,7 @@ pub async fn take(
         course_code: meta.course_code,
         course_name: meta.course_name,
         duration_mins: QUIZ_DURATION_MINS,
-        total_marks: meta.total_marks,
+        total_marks: served_total,
     };
     let mut ctx = Context::new();
     crate::insert_student_base(&mut ctx, &user.display_name, &student_id.to_string());
@@ -587,72 +624,51 @@ pub async fn submit(
         Ok(None) => return HttpResponse::NotFound().body("Quiz not found."),
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
     }
-    // Enforce attempt limit.
-    match attempts_used(db.get_ref(), quiz_id, student_id).await {
-        Ok(n) if n >= ATTEMPTS_ALLOWED => return submit_err("You have already submitted this quiz."),
-        Ok(_) => {}
-        Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
-    }
-
-    let questions = match load_grade_questions(db.get_ref(), quiz_id).await {
-        Ok(q) if !q.is_empty() => q,
-        Ok(_) => return submit_err("This quiz has no questions."),
+    // Finalize the in-progress attempt that was created when the quiz started.
+    let attempt_id = match in_progress_attempt(db.get_ref(), quiz_id, student_id).await {
+        Ok(Some(id)) => id,
+        Ok(None) => return submit_err("No active attempt - start the quiz first."),
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
     };
 
-    // Grade.
-    let mut score = 0i32;
-    // (question_id, selected_option_id, is_correct)
-    let mut graded: Vec<(i32, Option<i32>, bool)> = Vec::with_capacity(questions.len());
-    for q in &questions {
-        let chosen = payload
+    // Resolve the course (needed for topic-proficiency tracking).
+    let course_id = match course_id_for_quiz(db.get_ref(), quiz_id).await {
+        Ok(Some(id)) => id,
+        Ok(None) => return HttpResponse::NotFound().body("Quiz not found."),
+        Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+    };
+
+    // Grade only the questions that were served for this attempt.
+    let questions = match crate::quiz_engine::load_served_questions(db.get_ref(), attempt_id).await {
+        Ok(q) if !q.is_empty() => q,
+        Ok(_) => return submit_err("This attempt has no questions."),
+        Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+    };
+
+    // Grade with the shared engine.
+    let submission = crate::quiz_engine::AttemptSubmission {
+        answers: payload
             .answers
             .iter()
-            .find(|a| a.question_id == q.id)
-            .and_then(|a| a.selected_option_id);
-        let is_correct = chosen
-            .map(|cid| q.options.iter().any(|o| o.id == cid && o.is_correct))
-            .unwrap_or(false);
-        if is_correct {
-            score += q.marks;
-        }
-        graded.push((q.id, chosen, is_correct));
-    }
-
-    // Persist attempt + answers.
-    let mut tx = match db.begin().await {
-        Ok(t) => t,
-        Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+            .map(|a| crate::quiz_engine::AnswerSubmission {
+                question_id: a.question_id,
+                selected_option_id: a.selected_option_id,
+            })
+            .collect(),
     };
-    let attempt_id: i32 = match sqlx::query_scalar(
-        r#"INSERT INTO quiz_attempts (quiz_id, student_id, submitted_at, score)
-           VALUES ($1, $2, NOW(), CAST($3 AS NUMERIC)) RETURNING id"#,
+    let result = crate::quiz_engine::grade_attempt(&questions, &submission);
+
+    // Finalize attempt + answers AND update topic proficiency (single transaction).
+    if let Err(e) = crate::quiz_engine::persist_attempt(
+        db.get_ref(),
+        attempt_id,
+        student_id,
+        course_id,
+        &submission,
+        &result,
     )
-    .bind(quiz_id)
-    .bind(student_id)
-    .bind(score)
-    .fetch_one(&mut *tx)
     .await
     {
-        Ok(id) => id,
-        Err(e) => return HttpResponse::InternalServerError().body(format!("Save failed: {e}")),
-    };
-    for (question_id, selected_option_id, is_correct) in &graded {
-        if let Err(e) = sqlx::query(
-            r#"INSERT INTO quiz_answers (attempt_id, question_id, selected_option_id, is_correct)
-               VALUES ($1, $2, $3, $4)"#,
-        )
-        .bind(attempt_id)
-        .bind(question_id)
-        .bind(*selected_option_id)
-        .bind(*is_correct)
-        .execute(&mut *tx)
-        .await
-        {
-            return HttpResponse::InternalServerError().body(format!("Save failed: {e}"));
-        }
-    }
-    if let Err(e) = tx.commit().await {
         return HttpResponse::InternalServerError().body(format!("Save failed: {e}"));
     }
 
@@ -715,10 +731,11 @@ pub async fn result(
     struct AttemptRow {
         id: i32,
         score: Option<f32>,
+        total_marks: Option<i32>,
         submitted_at: Option<String>,
     }
     let attempt = sqlx::query_as::<_, AttemptRow>(
-        r#"SELECT id, score::float4 AS score, to_char(submitted_at, 'DD Mon YYYY, HH24:MI') AS submitted_at
+        r#"SELECT id, score::float4 AS score, total_marks, to_char(submitted_at, 'DD Mon YYYY, HH24:MI') AS submitted_at
              FROM quiz_attempts
             WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NOT NULL
             ORDER BY submitted_at DESC LIMIT 1"#,
@@ -754,9 +771,10 @@ pub async fn result(
                   ans.is_correct,
                   chosen.option_text AS your_answer,
                   correct.option_text AS correct_answer
-             FROM quiz_questions qq
+             FROM quiz_attempt_questions aq
+             JOIN quiz_questions qq ON qq.id = aq.question_id
              LEFT JOIN quiz_answers ans
-                    ON ans.question_id = qq.id AND ans.attempt_id = $2
+                    ON ans.question_id = qq.id AND ans.attempt_id = $1
              LEFT JOIN quiz_options chosen
                     ON chosen.id = ans.selected_option_id
              LEFT JOIN LATERAL (
@@ -764,10 +782,9 @@ pub async fn result(
                      WHERE o.question_id = qq.id AND o.is_correct = TRUE
                      ORDER BY o.id LIMIT 1
                   ) correct ON TRUE
-            WHERE qq.quiz_id = $1
-            ORDER BY qq.id"#,
+            WHERE aq.attempt_id = $1
+            ORDER BY aq.position"#,
     )
-    .bind(quiz_id)
     .bind(attempt.id)
     .fetch_all(db.get_ref())
     .await
@@ -786,12 +803,63 @@ pub async fn result(
         });
     }
 
+    let total = attempt.total_marks.unwrap_or(meta.total_marks);
     let score = attempt.score.unwrap_or(0.0).round() as i32;
-    let percentage = if meta.total_marks > 0 {
-        (score as f32 / meta.total_marks as f32 * 100.0).round() as i32
+    let percentage = if total > 0 {
+        (score as f32 / total as f32 * 100.0).round() as i32
     } else {
         0
     };
+
+    // Competency readout (per-topic proficiency) + recommended materials.
+    let course_id = course_id_for_quiz(db.get_ref(), quiz_id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+
+    #[derive(FromRow)]
+    struct ProfRow {
+        topic: String,
+        proficiency: f32,
+    }
+    let prof_rows = sqlx::query_as::<_, ProfRow>(
+        "SELECT topic, proficiency::float4 AS proficiency FROM student_topic_proficiency WHERE student_id = $1 AND course_id = $2 ORDER BY topic",
+    )
+    .bind(student_id)
+    .bind(course_id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default();
+
+    #[derive(Serialize)]
+    struct Competency {
+        topic: String,
+        percent: i32,
+        level: String,
+    }
+    let competencies: Vec<Competency> = prof_rows
+        .iter()
+        .map(|r| {
+            let level = if r.proficiency >= 0.75 {
+                "Advanced"
+            } else if r.proficiency >= 0.45 {
+                "Intermediate"
+            } else {
+                "Beginner"
+            };
+            Competency {
+                topic: r.topic.clone(),
+                percent: (r.proficiency * 100.0).round() as i32,
+                level: level.into(),
+            }
+        })
+        .collect();
+
+    let recommendations =
+        crate::quiz_engine::recommend_materials(db.get_ref(), student_id, course_id, 0.6, 5)
+            .await
+            .unwrap_or_default();
 
     let mut ctx = Context::new();
     crate::insert_student_base(&mut ctx, &user.display_name, &student_id.to_string());
@@ -800,10 +868,12 @@ pub async fn result(
     ctx.insert("quiz_title", &meta.title);
     ctx.insert("course_code", &meta.course_code);
     ctx.insert("score", &score);
-    ctx.insert("total_marks", &meta.total_marks);
+    ctx.insert("total_marks", &total);
     ctx.insert("percentage", &percentage);
     ctx.insert("submitted_at", &attempt.submitted_at.unwrap_or_default());
     ctx.insert("questions", &questions);
+    ctx.insert("competencies", &competencies);
+    ctx.insert("recommendations", &recommendations);
     render(&tmpl, "student/quiz_result.html", &ctx)
 }
 

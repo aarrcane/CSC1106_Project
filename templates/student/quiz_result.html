@@ -18,6 +18,47 @@
     </div>
   </div>
 
+  {% if competencies | length > 0 %}
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+      <h6 class="fw-bold mb-3">Your competency</h6>
+      {% for c in competencies %}
+      <div class="mb-3">
+        <div class="d-flex justify-content-between small mb-1">
+          <span class="fw-semibold">{{ c.topic }}</span>
+          <span class="text-muted">{{ c.level }} &middot; {{ c.percent }}%</span>
+        </div>
+        <div class="progress" style="height:8px;">
+          <div class="progress-bar{% if c.percent >= 75 %} bg-success{% elif c.percent >= 45 %} bg-info{% else %} bg-warning{% endif %}"
+               role="progressbar" style="width: {{ c.percent }}%;" aria-valuenow="{{ c.percent }}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if recommendations | length > 0 %}
+  <div class="card shadow-sm border-0 mb-4">
+    <div class="card-body">
+      <h6 class="fw-bold mb-1">Recommended materials</h6>
+      <p class="text-muted small mb-3">Suggested for the topics you're still building up.</p>
+      <ul class="list-group list-group-flush">
+        {% for m in recommendations %}
+        <li class="list-group-item px-0 d-flex justify-content-between align-items-center">
+          <span>
+            <i class="bi bi-journal-text me-2"></i>{{ m.title }}
+            {% if m.topic %}<span class="badge bg-light text-dark border ms-1">{{ m.topic }}</span>{% endif %}
+            <span class="badge bg-secondary-subtle text-secondary-emphasis ms-1">{{ m.material_type }}</span>
+          </span>
+          <a class="btn btn-sm btn-outline-primary" href="{{ m.file_path }}">Open</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
   <h6 class="fw-bold mb-3">Question breakdown</h6>
   {% for q in questions %}
   <div class="card shadow-sm border-0 mb-3">
