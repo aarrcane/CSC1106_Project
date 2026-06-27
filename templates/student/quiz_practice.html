@@ -1,0 +1,72 @@
+{% extends "base_student.html" %}
+{% block title %}Practice – LMS Portal{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4" style="max-width: 1000px;">
+
+  <div class="mb-4">
+    <h4 class="fw-bold mb-1"><i class="bi bi-lightbulb text-warning me-2"></i>Practice</h4>
+    <p class="text-muted mb-0">
+      Low-stakes, adaptive practice. Questions are pulled from a bank and matched to your
+      current proficiency — do well and the next attempt pulls harder questions. Unlimited attempts.
+    </p>
+  </div>
+
+  {% if quizzes | length == 0 %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body text-center text-muted py-5">
+      <i class="bi bi-lightbulb fs-2 d-block mb-2"></i>
+      No practice quizzes are available for your courses yet.
+    </div>
+  </div>
+  {% else %}
+  <div class="row g-3">
+    {% for q in quizzes %}
+    <div class="col-md-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body d-flex flex-column">
+          <div class="d-flex justify-content-between align-items-start mb-1">
+            <span class="badge bg-light text-dark border">{{ q.course_code }}</span>
+            <span class="badge bg-warning-subtle text-warning-emphasis">Practice</span>
+          </div>
+          <h6 class="fw-bold mb-1">{{ q.title }}</h6>
+          <div class="text-muted small mb-3">{{ q.course_name }}</div>
+
+          <div class="mb-2">
+            <div class="d-flex justify-content-between small mb-1">
+              <span class="fw-semibold">Your proficiency</span>
+              <span class="text-muted">{{ q.level }} &middot; {{ q.proficiency_pct }}%</span>
+            </div>
+            <div class="progress" style="height:8px;">
+              <div class="progress-bar{% if q.proficiency_pct >= 75 %} bg-success{% elif q.proficiency_pct >= 45 %} bg-info{% else %} bg-warning{% endif %}"
+                   role="progressbar" style="width: {{ q.proficiency_pct }}%;"
+                   aria-valuenow="{{ q.proficiency_pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+          </div>
+
+          <div class="text-muted small mb-3">
+            <i class="bi bi-collection me-1"></i>{{ q.serve_count }} questions per attempt
+            <span class="mx-1">·</span> bank of {{ q.bank_size }}
+            <span class="mx-1">·</span> {{ q.attempts_used }} attempt{% if q.attempts_used != 1 %}s{% endif %} so far
+            {% if q.attempts_used > 0 %}
+            <span class="mx-1">·</span> last: {{ q.last_score }}/{{ q.last_total }}
+            {% endif %}
+          </div>
+
+          <div class="mt-auto d-flex gap-2">
+            <a href="/student/practice/{{ q.id }}/take" class="btn btn-primary btn-sm">
+              <i class="bi bi-play-fill me-1"></i>{% if q.attempts_used > 0 %}Practice again{% else %}Start practice{% endif %}
+            </a>
+            {% if q.attempts_used > 0 %}
+            <a href="/student/practice/{{ q.id }}/result" class="btn btn-outline-secondary btn-sm">Last result</a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

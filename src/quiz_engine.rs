@@ -240,6 +240,43 @@ pub fn select_balanced_subset_ids(pool: &[EngineQuestion], serve_count: usize, s
 }
 
 
+// Select up to `serve_count` questions for a PRACTICE attempt, favouring those
+// whose difficulty is closest to `target_difficulty`. The target is derived from
+// the student's current practice proficiency (higher proficiency -> higher
+// target -> harder questions). The seed shuffles within an equal-distance band
+// so repeated attempts at the same proficiency draw different questions while
+// keeping the same difficulty focus.
+pub fn select_practice_subset_ids(
+    pool: &[EngineQuestion],
+    serve_count: usize,
+    target_difficulty: i16,
+    seed: u64,
+) -> Vec<i32> {
+    let want = serve_count.min(pool.len());
+    if want == 0 {
+        return Vec::new();
+    }
+
+    let mut idx: Vec<usize> = (0..pool.len()).collect();
+
+    // Seeded Fisher-Yates shuffle first, so questions at the same distance from
+    // the target appear in a varied order across attempts.
+    let mut st = seed ^ 0x9E37_79B9_7F4A_7C15;
+    for i in (1..idx.len()).rev() {
+        st = st
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let j = ((st >> 33) as usize) % (i + 1);
+        idx.swap(i, j);
+    }
+
+    // Stable sort by distance to the target difficulty keeps the shuffled order
+    // within each equal-distance group. Take the closest `want` questions.
+    idx.sort_by_key(|&i| (pool[i].difficulty - target_difficulty).abs());
+    idx.into_iter().take(want).map(|i| pool[i].id).collect()
+}
+
+
 // DB access
 
 // Resolve the students.id for the logged-in user, or None if not a student row.
@@ -681,6 +718,43 @@ mod tests {
     fn balanced_subset_clamps_to_pool_size() {
         let pool: Vec<_> = (1..=3).map(|id| mcq(id, 1, 2, id * 10)).collect();
         let ids = select_balanced_subset_ids(&pool, 10, 7);
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[test]
+    fn practice_subset_picks_harder_for_higher_target() {
+        // Pool spans difficulties 1..=5, four each.
+        let mut pool = Vec::new();
+        let mut id = 1;
+        for d in 1..=5 {
+            for _ in 0..4 {
+                pool.push(mcq(id, 1, d as i16, id * 10));
+                id += 1;
+            }
+        }
+        let diff_of = |ids: &Vec<i32>| ids.iter()
+            .map(|c| pool.iter().find(|q| q.id == *c).unwrap().difficulty as f32)
+            .sum::<f32>() / ids.len() as f32;
+        let easy = select_practice_subset_ids(&pool, 4, 1, 42);
+        let hard = select_practice_subset_ids(&pool, 4, 5, 42);
+        assert_eq!(easy.len(), 4);
+        assert_eq!(hard.len(), 4);
+        // A higher target difficulty yields a higher average difficulty.
+        assert!(diff_of(&hard) > diff_of(&easy));
+    }
+
+    #[test]
+    fn practice_subset_is_deterministic_per_seed() {
+        let pool: Vec<_> = (1..=10).map(|id| mcq(id, 1, ((id % 5) + 1) as i16, id * 10)).collect();
+        let a = select_practice_subset_ids(&pool, 5, 3, 123);
+        let b = select_practice_subset_ids(&pool, 5, 3, 123);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn practice_subset_clamps_to_pool_size() {
+        let pool: Vec<_> = (1..=3).map(|id| mcq(id, 1, 2, id * 10)).collect();
+        let ids = select_practice_subset_ids(&pool, 10, 5, 7);
         assert_eq!(ids.len(), 3);
     }
 

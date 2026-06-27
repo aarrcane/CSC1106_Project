@@ -1,4 +1,4 @@
-use actix_session::Session;
+﻿use actix_session::Session;
 use actix_web::{HttpResponse, Responder, web};
 use sqlx::PgPool;
 use tera::{Context, Tera};
@@ -162,6 +162,7 @@ pub async fn student_dashboard(
                   FROM quizzes q
                   JOIN enrollments e ON e.course_id = q.course_id
                   WHERE e.student_id = $1
+                    AND q.is_practice = FALSE
                     AND q.close_at >= NOW()
                     AND NOT EXISTS (
                         SELECT 1 FROM quiz_attempts qa
@@ -337,6 +338,7 @@ pub async fn student_dashboard(
                 JOIN enrollments e ON e.course_id = q.course_id
                 JOIN courses c ON c.id = q.course_id
                 WHERE e.student_id = $1
+                  AND q.is_practice = FALSE
                   AND q.close_at >= NOW()
                   AND NOT EXISTS (
                       SELECT 1 FROM quiz_attempts qa
@@ -757,7 +759,7 @@ pub async fn student_grades(
                     COALESCE(qa.submitted_at, q.close_at) AS sort_at
                 FROM quizzes q
                 JOIN quiz_attempts qa ON qa.quiz_id = q.id AND qa.student_id = $1
-                WHERE q.course_id = $2 AND qa.submitted_at IS NOT NULL AND qa.score IS NOT NULL
+                WHERE q.course_id = $2 AND q.is_practice = FALSE AND qa.submitted_at IS NOT NULL AND qa.score IS NOT NULL
              ) grade_items
              ORDER BY sort_at",
         )

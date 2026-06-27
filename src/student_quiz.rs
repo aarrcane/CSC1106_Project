@@ -219,7 +219,7 @@ pub async fn quiz_list(
              FROM quizzes q
              JOIN courses c ON c.id = q.course_id
              JOIN enrollments e ON e.course_id = c.id
-            WHERE e.student_id = $1
+            WHERE e.student_id = $1 AND q.is_practice = FALSE
             ORDER BY q.close_at"#,
     )
     .bind(student_id)

@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS quizzes (
     total_marks INT NOT NULL,
     serve_count INT,                       -- NULL = serve all questions
     attempts_allowed INT NOT NULL DEFAULT 1,
+    is_practice BOOLEAN NOT NULL DEFAULT FALSE, -- practice quizzes: adaptive difficulty, unlimited attempts, no proctoring
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -354,4 +355,27 @@ CREATE TABLE IF NOT EXISTS quiz_attempt_questions (
     question_id INT NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
     position    INT NOT NULL,
     PRIMARY KEY (attempt_id, question_id)
+);
+
+-- Practice-quiz proficiency (separate track from the graded student_topic_proficiency).
+-- Updated only by practice attempts; drives adaptive difficulty for practice quizzes.
+CREATE TABLE IF NOT EXISTS student_practice_proficiency (
+    id             SERIAL PRIMARY KEY,
+    student_id     INT NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    course_id      INT NOT NULL REFERENCES courses(id)  ON DELETE CASCADE,
+    topic          VARCHAR(120) NOT NULL,
+    proficiency    NUMERIC(4,3) NOT NULL DEFAULT 0.5,  -- 0.000..1.000
+    answered_count INT NOT NULL DEFAULT 0,
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (student_id, course_id, topic)
+);
+
+-- Per-attempt before/after proficiency snapshot, so the practice result page can
+-- show how each topic's proficiency moved as a result of that attempt.
+CREATE TABLE IF NOT EXISTS practice_attempt_proficiency (
+    attempt_id  INT NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    topic       VARCHAR(120) NOT NULL,
+    prof_before NUMERIC(4,3) NOT NULL,
+    prof_after  NUMERIC(4,3) NOT NULL,
+    PRIMARY KEY (attempt_id, topic)
 );

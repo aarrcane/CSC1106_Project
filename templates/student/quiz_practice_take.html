@@ -1,0 +1,123 @@
+{% extends "base_student.html" %}
+{% block title %}Practice – {{ quiz_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 px-3 px-md-4" style="max-width: 900px;">
+
+  <a href="/student/practice" class="btn btn-light btn-sm mb-3"><i class="bi bi-arrow-left"></i> Back to practice</a>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+      <h4 class="fw-bold mb-0">{{ quiz_title }}</h4>
+      <span class="text-muted small">{{ course_code }} — {{ course_name }} · {{ total_marks }} marks</span>
+    </div>
+    <span class="badge bg-warning-subtle text-warning-emphasis align-self-start">Practice · unlimited attempts</span>
+  </div>
+
+  <!-- Step 1: current proficiency drives the difficulty served -->
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+      <div class="d-flex justify-content-between small mb-1">
+        <span class="fw-semibold">Your current proficiency</span>
+        <span class="text-muted">{{ proficiency_level }} · {{ proficiency_pct }}%</span>
+      </div>
+      <div class="progress mb-2" style="height:8px;">
+        <div class="progress-bar{% if proficiency_pct >= 75 %} bg-success{% elif proficiency_pct >= 45 %} bg-info{% else %} bg-warning{% endif %}"
+             role="progressbar" style="width: {{ proficiency_pct }}%;"></div>
+      </div>
+      <div class="text-muted small">
+        <i class="bi bi-bullseye me-1"></i>This set is pulled from the bank at difficulty
+        <strong>{{ target_difficulty }}/5</strong> to match your level. Score well and your next attempt pulls harder questions.
+      </div>
+    </div>
+  </div>
+
+  <div id="practiceAlert" class="alert d-none" role="alert"></div>
+
+  <form id="practiceForm">
+    {% for question in questions %}
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-body">
+        <div class="d-flex gap-2 mb-2">
+          <span class="badge bg-primary-subtle text-primary-emphasis">Q{{ question.number }}</span>
+          <span class="badge bg-light text-dark border">Difficulty {{ question.difficulty }}/5</span>
+        </div>
+        <p class="fw-semibold mb-3">{{ question.question_text }}</p>
+        {% for option in question.options %}
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio"
+                 name="q_{{ question.id }}" id="q{{ question.id }}_o{{ option.id }}"
+                 value="{{ option.id }}">
+          <label class="form-check-label" for="q{{ question.id }}_o{{ option.id }}">
+            {{ option.option_text }}
+          </label>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="d-flex justify-content-between align-items-center pb-5">
+      <a href="/student/practice" class="btn btn-light">Leave</a>
+      <button type="submit" id="practiceSubmitBtn" class="btn btn-success">
+        <i class="bi bi-check2-circle me-1"></i> Submit &amp; see proficiency
+      </button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const SUBMIT_URL = "{{ submit_url | safe }}";
+    const form = document.getElementById("practiceForm");
+    const btn = document.getElementById("practiceSubmitBtn");
+    const alertBox = document.getElementById("practiceAlert");
+    let submitting = false;
+
+    function showError(msg) {
+      alertBox.className = "alert alert-danger";
+      alertBox.textContent = msg;
+      alertBox.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+
+    function collectAnswers() {
+      const answers = [];
+      form.querySelectorAll('input[type="radio"]').forEach((el) => {
+        if (el.checked) {
+          const qid = parseInt(el.name.slice(2), 10);
+          answers.push({ question_id: qid, selected_option_id: parseInt(el.value, 10) });
+        }
+      });
+      return answers;
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (submitting) return;
+      submitting = true;
+      btn.disabled = true;
+      try {
+        const res = await fetch(SUBMIT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ answers: collectAnswers() }),
+        });
+        const ct = res.headers.get("content-type") || "";
+        const data = ct.includes("application/json") ? await res.json() : { ok: res.ok, message: await res.text() };
+        if (res.ok && data.ok && data.redirect) {
+          window.location.href = data.redirect;
+        } else {
+          showError(data.message || "Could not submit your attempt.");
+          submitting = false;
+          btn.disabled = false;
+        }
+      } catch (err) {
+        showError("Network error while submitting: " + err.message);
+        submitting = false;
+        btn.disabled = false;
+      }
+    });
+  })();
+</script>
+{% endblock %}
