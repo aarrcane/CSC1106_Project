@@ -154,7 +154,8 @@ fn render(tmpl: &Tera, name: &str, ctx: &Context) -> HttpResponse {
     }
 }
 
-// ── GET /student/practice 
+// ── GET /student/practice
+#[derive(Serialize)]
 struct PracticeCard {
     id: i32,
     title: String,

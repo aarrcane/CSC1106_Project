@@ -1244,14 +1244,6 @@ impl ForumAudience<'_> {
         }
     }
 
-    fn display_name(&self) -> &str {
-        match self {
-            Self::Student { display_name, .. } | Self::Lecturer { display_name, .. } => {
-                display_name
-            }
-        }
-    }
-
     fn template(&self) -> &'static str {
         match self {
             Self::Student { .. } => "student/discussionforum.html",

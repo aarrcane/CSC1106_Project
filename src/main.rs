@@ -81,19 +81,6 @@ struct NotificationContext {
 }
 
 #[derive(Serialize)]
-struct AssignmentContext {
-    id: i32,
-    title: String,
-    course_code: String,
-    course_name: String,
-    item_type: String,
-    due_date: String,
-    status: String,
-    score: Option<String>,
-    urgent: bool,
-}
-
-#[derive(Serialize)]
 struct GradeItemContext {
     title: String,
     item_type: String,
@@ -127,13 +114,6 @@ struct QuizContext {
     urgent: bool,
 }
 
-#[derive(Serialize)]
-struct QuizAttemptQuestionContext {
-    number: i32,
-    prompt: String,
-    options: Vec<String>,
-}
-
 #[derive(Deserialize)]
 struct QuizMonitoringEventPayload {
     event_type: String,
@@ -155,42 +135,6 @@ struct QuizMonitoringEventContext {
     severity: String,
     details: Option<String>,
     occurred_at: String,
-}
-
-#[derive(Serialize)]
-struct AttendanceSessionContext {
-    date: String,
-    topic: String,
-    status: String,
-}
-
-#[derive(Serialize)]
-struct AttendanceCourseContext {
-    code: String,
-    name: String,
-    pct: i32,
-    attended: i32,
-    total: i32,
-    sessions: Vec<AttendanceSessionContext>,
-}
-
-#[derive(Serialize)]
-struct ThreadContext {
-    id: i32,
-    title: String,
-    course_code: String,
-    course_name: String,
-    author: String,
-    author_initials: String,
-    created_at: String,
-    last_reply_at: String,
-    reply_count: i32,
-    view_count: i32,
-    is_pinned: bool,
-    is_answered: bool,
-    is_mine: bool,
-    tags: Vec<String>,
-    preview: String,
 }
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────

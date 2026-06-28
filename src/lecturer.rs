@@ -764,32 +764,6 @@ pub async fn lecturer_grades_page(tmpl: web::Data<Tera>, session: Session) -> im
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn lecturer_attendance_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(u) => u,
-        Err(r) => return r,
-    };
-    let ctx = base_ctx(&user, "attendance");
-    let rendered = match tmpl.render("lecturer/attendance.html", &ctx) {
-        Ok(h) => h,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
-pub async fn lecturer_forum_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(u) => u,
-        Err(r) => return r,
-    };
-    let ctx = base_ctx(&user, "forum");
-    let rendered = match tmpl.render("lecturer/forum.html", &ctx) {
-        Ok(h) => h,
-        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
-    };
-    HttpResponse::Ok().content_type("text/html").body(rendered)
-}
-
 pub async fn lecturer_profile_page(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,

@@ -143,11 +143,7 @@ struct AdminPreferenceDetails {
 
 #[derive(Deserialize)]
 pub struct AdminPreferencesForm {
-    pub email_notifications: Option<String>,
-    pub course_notifications: Option<String>,
-    pub forum_notifications: Option<String>,
-    pub grade_notifications: Option<String>,
-    pub theme_mode: String,
+    pub theme_mode: String
 }
 
 async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
