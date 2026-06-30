@@ -886,20 +886,32 @@ async fn lecturer_records(
 ) -> Result<Vec<LecturerRecordView>, sqlx::Error> {
     sqlx::query_as::<_, LecturerRecordView>(
         "SELECT
-             ar.id,
-             u.display_name AS student_name,
-             u.email AS student_email,
-             ar.status,
-             CASE
-                 WHEN ar.checked_in_at IS NULL THEN NULL
-                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
-             END AS checked_in_at,
-             COALESCE(ar.note, '') AS note
-         FROM attendance_records ar
-         JOIN students st ON st.id = ar.student_id
-         JOIN users u ON u.id = st.user_id
-         WHERE ar.session_id = $1
-         ORDER BY u.display_name",
+             latest.id,
+             latest.student_name,
+             latest.student_email,
+             latest.status,
+             latest.checked_in_at,
+             latest.note
+         FROM (
+             SELECT DISTINCT ON (st.id)
+                 ar.id,
+                 st.id AS student_id,
+                 u.display_name AS student_name,
+                 u.email AS student_email,
+                 ar.status,
+                 CASE
+                     WHEN ar.checked_in_at IS NULL THEN NULL
+                     ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                 END AS checked_in_at,
+                 COALESCE(ar.note, '') AS note,
+                 ar.updated_at
+             FROM attendance_records ar
+             JOIN students st ON st.id = ar.student_id
+             JOIN users u ON u.id = st.user_id
+             WHERE ar.session_id = $1
+             ORDER BY st.id, ar.updated_at DESC, ar.id DESC
+         ) latest
+         ORDER BY latest.student_name",
     )
     .bind(session_id)
     .fetch_all(db)

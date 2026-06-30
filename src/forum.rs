@@ -317,13 +317,17 @@ pub async fn create_student_thread(
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
     };
 
-    spawn_thread_attachment_save(
-        db.get_ref().clone(),
-        storage.get_ref().clone(),
+    if let Err(message) = save_thread_attachments(
+        db.get_ref(),
+        storage.get_ref(),
         thread_id,
         user.id,
         form.images,
-    );
+    )
+    .await
+    {
+        return redirect_with_message(&format!("/student/forum/threads/{thread_id}"), &message);
+    }
 
     spawn_notify_course_lecturer(
         db.get_ref().clone(),
@@ -400,13 +404,17 @@ pub async fn create_lecturer_thread(
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
     };
 
-    spawn_thread_attachment_save(
-        db.get_ref().clone(),
-        storage.get_ref().clone(),
+    if let Err(message) = save_thread_attachments(
+        db.get_ref(),
+        storage.get_ref(),
         thread_id,
         user.id,
         form.images,
-    );
+    )
+    .await
+    {
+        return redirect_with_message(&format!("/lecturer/forum/threads/{thread_id}"), &message);
+    }
 
     if thread_type == "announcement" {
         spawn_notify_enrolled_students(
@@ -547,13 +555,11 @@ pub async fn add_student_reply(
             Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
         };
 
-    spawn_post_attachment_save(
-        db.get_ref().clone(),
-        storage.get_ref().clone(),
-        post_id,
-        user.id,
-        form.images,
-    );
+    if let Err(message) =
+        save_post_attachments(db.get_ref(), storage.get_ref(), post_id, user.id, form.images).await
+    {
+        return redirect_with_message(&format!("/student/forum/threads/{thread_id}"), &message);
+    }
 
     if thread.created_by != user.id {
         spawn_insert_notification(
@@ -638,13 +644,11 @@ pub async fn add_lecturer_reply(
             Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
         };
 
-    spawn_post_attachment_save(
-        db.get_ref().clone(),
-        storage.get_ref().clone(),
-        post_id,
-        user.id,
-        form.images,
-    );
+    if let Err(message) =
+        save_post_attachments(db.get_ref(), storage.get_ref(), post_id, user.id, form.images).await
+    {
+        return redirect_with_message(&format!("/lecturer/forum/threads/{thread_id}"), &message);
+    }
 
     if thread.created_by != user.id {
         spawn_insert_notification(
@@ -1924,44 +1928,6 @@ struct PostAttachmentRow {
     content_type: String,
     file_size: i32,
     object_path: String,
-}
-
-fn spawn_thread_attachment_save(
-    db: PgPool,
-    storage: crate::storage::SupabaseStorage,
-    thread_id: i32,
-    user_id: i32,
-    images: Vec<PendingUpload>,
-) {
-    if images.is_empty() {
-        return;
-    }
-
-    actix_web::rt::spawn(async move {
-        if let Err(message) =
-            save_thread_attachments(&db, &storage, thread_id, user_id, images).await
-        {
-            eprintln!("Forum attachment upload failed for thread {thread_id}: {message}");
-        }
-    });
-}
-
-fn spawn_post_attachment_save(
-    db: PgPool,
-    storage: crate::storage::SupabaseStorage,
-    post_id: i32,
-    user_id: i32,
-    images: Vec<PendingUpload>,
-) {
-    if images.is_empty() {
-        return;
-    }
-
-    actix_web::rt::spawn(async move {
-        if let Err(message) = save_post_attachments(&db, &storage, post_id, user_id, images).await {
-            eprintln!("Forum attachment upload failed for post {post_id}: {message}");
-        }
-    });
 }
 
 async fn save_thread_attachments(

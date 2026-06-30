@@ -5,6 +5,40 @@
 
   const processingForms = new WeakSet();
 
+  function submitButtonsFor(form) {
+    if (!form.id) {
+      return [];
+    }
+    return Array.from(
+      document.querySelectorAll(`button[type="submit"][form="${form.id}"]`)
+    );
+  }
+
+  function resetForumForm(form) {
+    if (!form) {
+      return;
+    }
+    form.reset();
+    delete form.dataset.forumImagesCompressed;
+    processingForms.delete(form);
+    submitButtonsFor(form).forEach((button) => {
+      button.disabled = false;
+      if (button.dataset.originalText) {
+        button.innerHTML = button.dataset.originalText;
+      }
+    });
+  }
+
+  function markSubmitting(form) {
+    submitButtonsFor(form).forEach((button) => {
+      if (!button.dataset.originalText) {
+        button.dataset.originalText = button.innerHTML;
+      }
+      button.disabled = true;
+      button.textContent = "Posting...";
+    });
+  }
+
   function isForumUploadForm(form) {
     return (
       form &&
@@ -96,9 +130,13 @@
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!isForumUploadForm(form) || form.dataset.forumImagesCompressed === "true") {
+      if (isForumUploadForm(form)) {
+        markSubmitting(form);
+      }
       return;
     }
     if (!hasSelectedImages(form)) {
+      markSubmitting(form);
       return;
     }
 
@@ -115,10 +153,19 @@
     }
 
     form.dataset.forumImagesCompressed = "true";
-    if (event.submitter && event.submitter.form === form && form.requestSubmit) {
-      form.requestSubmit(event.submitter);
-    } else {
-      form.submit();
-    }
+    markSubmitting(form);
+    form.submit();
+  });
+
+  window.addEventListener("pageshow", () => {
+    document.querySelectorAll("#newThreadForm").forEach(resetForumForm);
+  });
+
+  document.addEventListener("show.bs.modal", (event) => {
+    resetForumForm(event.target.querySelector("#newThreadForm"));
+  });
+
+  document.addEventListener("hidden.bs.modal", (event) => {
+    resetForumForm(event.target.querySelector("#newThreadForm"));
   });
 })();
