@@ -755,7 +755,7 @@ async fn lecturer_course_overviews(
              latest.status AS latest_session_status,
              CASE
                  WHEN latest.opened_at IS NULL THEN NULL
-                 ELSE TO_CHAR(latest.opened_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                ELSE TO_CHAR(latest.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              END AS latest_session_opened_at
          FROM courses c
          LEFT JOIN enrollments e ON e.course_id = c.id
@@ -782,7 +782,23 @@ async fn lecturer_sessions(
     lecturer_id: i32,
 ) -> Result<Vec<LecturerSessionView>, sqlx::Error> {
     let rows = sqlx::query_as::<_, LecturerSessionRow>(
-        "SELECT
+        "WITH recent_sessions AS (
+             SELECT
+                 s.id,
+                 s.course_id,
+                 s.session_title,
+                 s.check_in_code,
+                 s.status,
+                 s.late_after_minutes,
+                 s.opened_at,
+                 s.closed_at
+             FROM attendance_sessions s
+             JOIN courses c ON c.id = s.course_id
+             WHERE c.lecturer_id = $1
+             ORDER BY (s.status = 'open') DESC, s.opened_at DESC
+             LIMIT 20
+         )
+         SELECT
              s.id,
              s.course_id,
              c.course_code,
@@ -791,23 +807,22 @@ async fn lecturer_sessions(
              s.check_in_code,
              s.status,
              s.late_after_minutes,
-             TO_CHAR(s.opened_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
+             TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
              CASE
                  WHEN s.closed_at IS NULL THEN NULL
-                 ELSE TO_CHAR(s.closed_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                 ELSE TO_CHAR(s.closed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              END AS closed_at,
              COUNT(ar.id) AS total_count,
              COUNT(ar.id) FILTER (WHERE ar.status = 'present') AS present_count,
              COUNT(ar.id) FILTER (WHERE ar.status = 'late') AS late_count,
              COUNT(ar.id) FILTER (WHERE ar.status = 'absent') AS absent_count,
              COUNT(ar.id) FILTER (WHERE ar.status = 'excused') AS excused_count
-         FROM attendance_sessions s
+         FROM recent_sessions s
          JOIN courses c ON c.id = s.course_id
          LEFT JOIN attendance_records ar ON ar.session_id = s.id
-         WHERE c.lecturer_id = $1
-         GROUP BY s.id, c.course_code, c.course_name
-         ORDER BY (s.status = 'open') DESC, s.opened_at DESC
-         LIMIT 20",
+         GROUP BY s.id, s.course_id, c.course_code, c.course_name, s.session_title,
+                  s.check_in_code, s.status, s.late_after_minutes, s.opened_at, s.closed_at
+         ORDER BY (s.status = 'open') DESC, s.opened_at DESC",
     )
     .bind(lecturer_id)
     .fetch_all(db)
@@ -836,10 +851,10 @@ async fn lecturer_session(
              s.check_in_code,
              s.status,
              s.late_after_minutes,
-             TO_CHAR(s.opened_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
+             TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
              CASE
                  WHEN s.closed_at IS NULL THEN NULL
-                 ELSE TO_CHAR(s.closed_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                 ELSE TO_CHAR(s.closed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              END AS closed_at,
              COUNT(ar.id) AS total_count,
              COUNT(ar.id) FILTER (WHERE ar.status = 'present') AS present_count,
@@ -877,7 +892,7 @@ async fn lecturer_records(
              ar.status,
              CASE
                  WHEN ar.checked_in_at IS NULL THEN NULL
-                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              END AS checked_in_at,
              COALESCE(ar.note, '') AS note
          FROM attendance_records ar
@@ -925,7 +940,7 @@ async fn student_attendance_courses(
     for course in courses {
         let sessions = sqlx::query_as::<_, StudentAttendanceSessionView>(
             "SELECT
-                 TO_CHAR(s.opened_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS date,
+                 TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS date,
                  s.session_title AS topic,
                  COALESCE(ar.status, 'absent') AS status
              FROM attendance_sessions s
@@ -975,11 +990,11 @@ async fn student_active_sessions(
              c.course_name,
              s.session_title,
              s.late_after_minutes,
-             TO_CHAR(s.opened_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
+             TO_CHAR(s.opened_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS opened_at,
              ar.status AS checked_in_status,
              CASE
                  WHEN ar.checked_in_at IS NULL THEN NULL
-                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'Asia/Singapore', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
+                 ELSE TO_CHAR(ar.checked_in_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"')
              END AS checked_in_at
          FROM attendance_sessions s
          JOIN courses c ON c.id = s.course_id

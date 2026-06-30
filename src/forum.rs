@@ -325,31 +325,26 @@ pub async fn create_student_thread(
         form.images,
     );
 
-    notify_course_lecturer(
-        db.get_ref(),
+    spawn_notify_course_lecturer(
+        db.get_ref().clone(),
         course_id,
-        "New forum thread",
-        &format!("{} created a discussion thread: {title}", user.display_name),
-        &format!("/lecturer/forum/threads/{thread_id}"),
-    )
-    .await;
+        "New forum thread".to_string(),
+        format!("{} created a discussion thread: {title}", user.display_name),
+        format!("/lecturer/forum/threads/{thread_id}"),
+    );
 
-    let actor = AuditActor {
-        user_id: Some(user.id),
-        role: Some("student".to_string()),
-        display_name: Some(user.display_name.clone()),
-    };
-    log_audit_event(
-        db.get_ref(),
+    spawn_audit_event(
+        db.get_ref().clone(),
         "content",
         "thread_created",
         "info",
-        &actor,
+        Some(user.id),
+        Some("student".to_string()),
+        Some(user.display_name.clone()),
         Some("forum_thread"),
         Some(thread_id),
         Some(format!("Created thread in course {course_id}")),
-    )
-    .await;
+    );
 
     redirect(&format!("/student/forum/threads/{thread_id}"))
 }
@@ -414,34 +409,29 @@ pub async fn create_lecturer_thread(
     );
 
     if thread_type == "announcement" {
-        notify_enrolled_students(
-            db.get_ref(),
+        spawn_notify_enrolled_students(
+            db.get_ref().clone(),
             course_id,
-            "New forum announcement",
-            &format!("{} posted: {title}", user.display_name),
-            &format!("/student/forum/threads/{thread_id}"),
-        )
-        .await;
+            "New forum announcement".to_string(),
+            format!("{} posted: {title}", user.display_name),
+            format!("/student/forum/threads/{thread_id}"),
+        );
     }
 
-    let actor = AuditActor {
-        user_id: Some(user.id),
-        role: Some("lecturer".to_string()),
-        display_name: Some(user.display_name.clone()),
-    };
-    log_audit_event(
-        db.get_ref(),
+    spawn_audit_event(
+        db.get_ref().clone(),
         "content",
         "thread_created",
         "info",
-        &actor,
+        Some(user.id),
+        Some("lecturer".to_string()),
+        Some(user.display_name.clone()),
         Some("forum_thread"),
         Some(thread_id),
         Some(format!(
             "Created {thread_type} thread in course {course_id}"
         )),
-    )
-    .await;
+    );
 
     redirect(&format!("/lecturer/forum/threads/{thread_id}"))
 }
@@ -566,35 +556,30 @@ pub async fn add_student_reply(
     );
 
     if thread.created_by != user.id {
-        insert_notification(
-            db.get_ref(),
+        spawn_insert_notification(
+            db.get_ref().clone(),
             thread.created_by,
-            "New forum reply",
-            &format!(
+            "New forum reply".to_string(),
+            format!(
                 "{} replied to your thread: {}",
                 user.display_name, thread.title
             ),
-            &format!("/student/forum/threads/{thread_id}"),
-        )
-        .await;
+            format!("/student/forum/threads/{thread_id}"),
+        );
     }
 
-    let actor = AuditActor {
-        user_id: Some(user.id),
-        role: Some("student".to_string()),
-        display_name: Some(user.display_name.clone()),
-    };
-    log_audit_event(
-        db.get_ref(),
+    spawn_audit_event(
+        db.get_ref().clone(),
         "content",
         "reply_created",
         "info",
-        &actor,
+        Some(user.id),
+        Some("student".to_string()),
+        Some(user.display_name.clone()),
         Some("forum_post"),
         Some(post_id),
         Some(format!("Replied in thread {thread_id}")),
-    )
-    .await;
+    );
 
     redirect(&format!("/student/forum/threads/{thread_id}"))
 }
@@ -662,35 +647,30 @@ pub async fn add_lecturer_reply(
     );
 
     if thread.created_by != user.id {
-        insert_notification(
-            db.get_ref(),
+        spawn_insert_notification(
+            db.get_ref().clone(),
             thread.created_by,
-            "Lecturer replied",
-            &format!(
+            "Lecturer replied".to_string(),
+            format!(
                 "{} replied to your thread: {}",
                 user.display_name, thread.title
             ),
-            &format!("/student/forum/threads/{thread_id}"),
-        )
-        .await;
+            format!("/student/forum/threads/{thread_id}"),
+        );
     }
 
-    let actor = AuditActor {
-        user_id: Some(user.id),
-        role: Some("lecturer".to_string()),
-        display_name: Some(user.display_name.clone()),
-    };
-    log_audit_event(
-        db.get_ref(),
+    spawn_audit_event(
+        db.get_ref().clone(),
         "content",
         "reply_created",
         "info",
-        &actor,
+        Some(user.id),
+        Some("lecturer".to_string()),
+        Some(user.display_name.clone()),
         Some("forum_post"),
         Some(post_id),
         Some(format!("Replied in thread {thread_id}")),
-    )
-    .await;
+    );
 
     redirect(&format!("/lecturer/forum/threads/{thread_id}"))
 }
@@ -2403,6 +2383,18 @@ async fn notify_course_lecturer(
     }
 }
 
+fn spawn_notify_course_lecturer(
+    db: PgPool,
+    course_id: i32,
+    title: String,
+    message: String,
+    link_url: String,
+) {
+    actix_web::rt::spawn(async move {
+        notify_course_lecturer(&db, course_id, &title, &message, &link_url).await;
+    });
+}
+
 async fn notify_enrolled_students(
     db: &PgPool,
     course_id: i32,
@@ -2426,6 +2418,18 @@ async fn notify_enrolled_students(
     }
 }
 
+fn spawn_notify_enrolled_students(
+    db: PgPool,
+    course_id: i32,
+    title: String,
+    message: String,
+    link_url: String,
+) {
+    actix_web::rt::spawn(async move {
+        notify_enrolled_students(&db, course_id, &title, &message, &link_url).await;
+    });
+}
+
 async fn insert_notification(
     db: &PgPool,
     user_id: i32,
@@ -2443,6 +2447,50 @@ async fn insert_notification(
     .bind(link_url)
     .execute(db)
     .await;
+}
+
+fn spawn_insert_notification(
+    db: PgPool,
+    user_id: i32,
+    title: String,
+    message: String,
+    link_url: String,
+) {
+    actix_web::rt::spawn(async move {
+        insert_notification(&db, user_id, &title, &message, &link_url).await;
+    });
+}
+
+fn spawn_audit_event(
+    db: PgPool,
+    category: &'static str,
+    action: &'static str,
+    severity: &'static str,
+    actor_user_id: Option<i32>,
+    actor_role: Option<String>,
+    actor_display_name: Option<String>,
+    target_type: Option<&'static str>,
+    target_id: Option<i32>,
+    details: Option<String>,
+) {
+    actix_web::rt::spawn(async move {
+        let actor = AuditActor {
+            user_id: actor_user_id,
+            role: actor_role,
+            display_name: actor_display_name,
+        };
+        log_audit_event(
+            &db,
+            category,
+            action,
+            severity,
+            &actor,
+            target_type,
+            target_id,
+            details,
+        )
+        .await;
+    });
 }
 
 async fn load_notifications(db: &PgPool, user_id: i32) -> Vec<crate::NotificationContext> {

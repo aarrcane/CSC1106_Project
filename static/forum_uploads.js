@@ -13,6 +13,12 @@
     );
   }
 
+  function hasSelectedImages(form) {
+    return Array.from(
+      form.querySelectorAll('input[type="file"][name="images"]')
+    ).some((input) => input.files && input.files.length > 0);
+  }
+
   function canCompress(file) {
     return (
       file &&
@@ -90,6 +96,9 @@
   document.addEventListener("submit", async (event) => {
     const form = event.target;
     if (!isForumUploadForm(form) || form.dataset.forumImagesCompressed === "true") {
+      return;
+    }
+    if (!hasSelectedImages(form)) {
       return;
     }
 

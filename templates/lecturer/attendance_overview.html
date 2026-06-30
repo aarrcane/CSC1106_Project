@@ -112,7 +112,6 @@
     const date = new Date(value);
     if (!Number.isNaN(date.getTime())) {
       element.textContent = date.toLocaleString('en-GB', {
-        timeZone: 'Asia/Singapore',
         dateStyle: 'medium',
         timeStyle: 'short'
       });
