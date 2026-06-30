@@ -1,13 +1,14 @@
-use actix_session::Session;
 use actix_multipart::Multipart;
+use actix_session::Session;
 use actix_web::{HttpResponse, http::header, web};
 use futures_util::TryStreamExt as _;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tera::{Context, Tera};
 
-use crate::admin::{log_audit_event, AuditActor};
+use crate::admin::{AuditActor, log_audit_event};
 use crate::auth::UserRole;
 
 const MAX_ATTACHMENTS_PER_ITEM: usize = 3;
@@ -316,17 +317,13 @@ pub async fn create_student_thread(
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
     };
 
-    if let Err(message) = save_thread_attachments(
-        db.get_ref(),
-        storage.get_ref(),
+    spawn_thread_attachment_save(
+        db.get_ref().clone(),
+        storage.get_ref().clone(),
         thread_id,
         user.id,
         form.images,
-    )
-    .await
-    {
-        return redirect_with_message(&format!("/student/forum/threads/{thread_id}"), &message);
-    }
+    );
 
     notify_course_lecturer(
         db.get_ref(),
@@ -408,17 +405,13 @@ pub async fn create_lecturer_thread(
         Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
     };
 
-    if let Err(message) = save_thread_attachments(
-        db.get_ref(),
-        storage.get_ref(),
+    spawn_thread_attachment_save(
+        db.get_ref().clone(),
+        storage.get_ref().clone(),
         thread_id,
         user.id,
         form.images,
-    )
-    .await
-    {
-        return redirect_with_message(&format!("/lecturer/forum/threads/{thread_id}"), &message);
-    }
+    );
 
     if thread_type == "announcement" {
         notify_enrolled_students(
@@ -444,7 +437,9 @@ pub async fn create_lecturer_thread(
         &actor,
         Some("forum_thread"),
         Some(thread_id),
-        Some(format!("Created {thread_type} thread in course {course_id}")),
+        Some(format!(
+            "Created {thread_type} thread in course {course_id}"
+        )),
     )
     .await;
 
@@ -556,16 +551,19 @@ pub async fn add_student_reply(
         }
     }
 
-    let post_id = match insert_reply(db.get_ref(), thread_id, user.id, form.parent_post_id, body).await {
-        Ok(post_id) => post_id,
-        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
-    };
+    let post_id =
+        match insert_reply(db.get_ref(), thread_id, user.id, form.parent_post_id, body).await {
+            Ok(post_id) => post_id,
+            Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+        };
 
-    if let Err(message) =
-        save_post_attachments(db.get_ref(), storage.get_ref(), post_id, user.id, form.images).await
-    {
-        return redirect_with_message(&format!("/student/forum/threads/{thread_id}"), &message);
-    }
+    spawn_post_attachment_save(
+        db.get_ref().clone(),
+        storage.get_ref().clone(),
+        post_id,
+        user.id,
+        form.images,
+    );
 
     if thread.created_by != user.id {
         insert_notification(
@@ -616,7 +614,10 @@ pub async fn add_lecturer_reply(
     let form = match parse_forum_multipart(payload).await {
         Ok(form) => form,
         Err(message) => {
-            return redirect_with_message(&format!("/lecturer/forum/threads/{thread_id}"), &message);
+            return redirect_with_message(
+                &format!("/lecturer/forum/threads/{thread_id}"),
+                &message,
+            );
         }
     };
 
@@ -646,16 +647,19 @@ pub async fn add_lecturer_reply(
         }
     }
 
-    let post_id = match insert_reply(db.get_ref(), thread_id, user.id, form.parent_post_id, body).await {
-        Ok(post_id) => post_id,
-        Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
-    };
+    let post_id =
+        match insert_reply(db.get_ref(), thread_id, user.id, form.parent_post_id, body).await {
+            Ok(post_id) => post_id,
+            Err(error) => return HttpResponse::InternalServerError().body(error.to_string()),
+        };
 
-    if let Err(message) =
-        save_post_attachments(db.get_ref(), storage.get_ref(), post_id, user.id, form.images).await
-    {
-        return redirect_with_message(&format!("/lecturer/forum/threads/{thread_id}"), &message);
-    }
+    spawn_post_attachment_save(
+        db.get_ref().clone(),
+        storage.get_ref().clone(),
+        post_id,
+        user.id,
+        form.images,
+    );
 
     if thread.created_by != user.id {
         insert_notification(
@@ -833,7 +837,12 @@ pub async fn delete_student_thread(
                 &actor,
                 Some("forum_thread"),
                 Some(thread_id),
-                Some(form.reason.as_deref().unwrap_or("Deleted by author").to_string()),
+                Some(
+                    form.reason
+                        .as_deref()
+                        .unwrap_or("Deleted by author")
+                        .to_string(),
+                ),
             )
             .await;
             redirect("/student/forum")
@@ -883,7 +892,12 @@ pub async fn delete_student_post(
                 &actor,
                 Some("forum_post"),
                 Some(post_id),
-                Some(form.reason.as_deref().unwrap_or("Deleted by author").to_string()),
+                Some(
+                    form.reason
+                        .as_deref()
+                        .unwrap_or("Deleted by author")
+                        .to_string(),
+                ),
             )
             .await;
             redirect(&format!("/student/forum/threads/{thread_id}"))
@@ -911,7 +925,9 @@ pub async fn delete_student_attachment(
     let Some(student_id) = student_id_for_user(db.get_ref(), user.id).await else {
         return HttpResponse::Forbidden().body("Student profile not found.");
     };
-    if ctx.uploaded_by != user.id || !student_can_access_course(db.get_ref(), student_id, ctx.course_id).await {
+    if ctx.uploaded_by != user.id
+        || !student_can_access_course(db.get_ref(), student_id, ctx.course_id).await
+    {
         return HttpResponse::Forbidden().body("You can only remove your own attachment.");
     }
 
@@ -1766,10 +1782,9 @@ async fn load_posts(
 
     let mut flattened = Vec::new();
     flatten_posts(None, 0, &rows, &mut flattened);
+    let mut attachments_by_post = load_post_attachments_for_thread(db, storage, thread_id).await?;
     for post in &mut flattened {
-        post.attachments = load_post_attachments(db, storage, post.id)
-            .await
-            .unwrap_or_default();
+        post.attachments = attachments_by_post.remove(&post.id).unwrap_or_default();
     }
     Ok(flattened)
 }
@@ -1832,12 +1847,42 @@ async fn load_thread_attachments(
     load_attachments(db, storage, Some(thread_id), None).await
 }
 
-async fn load_post_attachments(
+async fn load_post_attachments_for_thread(
     db: &PgPool,
     storage: &crate::storage::SupabaseStorage,
-    post_id: i32,
-) -> Result<Vec<ForumAttachmentView>, sqlx::Error> {
-    load_attachments(db, storage, None, Some(post_id)).await
+    thread_id: i32,
+) -> Result<HashMap<i32, Vec<ForumAttachmentView>>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, PostAttachmentRow>(
+        "SELECT fa.post_id,
+                fa.id,
+                fa.original_filename,
+                fa.content_type,
+                fa.file_size,
+                fa.object_path
+         FROM forum_attachments fa
+         JOIN forum_posts fp ON fp.id = fa.post_id
+         WHERE fp.thread_id = $1 AND fa.deleted_at IS NULL
+         ORDER BY fa.created_at ASC",
+    )
+    .bind(thread_id)
+    .fetch_all(db)
+    .await?;
+
+    let mut attachments_by_post: HashMap<i32, Vec<ForumAttachmentView>> = HashMap::new();
+    for row in rows {
+        attachments_by_post
+            .entry(row.post_id)
+            .or_default()
+            .push(ForumAttachmentView {
+                id: row.id,
+                original_filename: row.original_filename,
+                content_type: row.content_type,
+                file_size: row.file_size,
+                public_url: storage.public_url(&row.object_path),
+            });
+    }
+
+    Ok(attachments_by_post)
 }
 
 async fn load_attachments(
@@ -1889,6 +1934,54 @@ struct AttachmentRow {
     content_type: String,
     file_size: i32,
     object_path: String,
+}
+
+#[derive(FromRow)]
+struct PostAttachmentRow {
+    post_id: i32,
+    id: i32,
+    original_filename: String,
+    content_type: String,
+    file_size: i32,
+    object_path: String,
+}
+
+fn spawn_thread_attachment_save(
+    db: PgPool,
+    storage: crate::storage::SupabaseStorage,
+    thread_id: i32,
+    user_id: i32,
+    images: Vec<PendingUpload>,
+) {
+    if images.is_empty() {
+        return;
+    }
+
+    actix_web::rt::spawn(async move {
+        if let Err(message) =
+            save_thread_attachments(&db, &storage, thread_id, user_id, images).await
+        {
+            eprintln!("Forum attachment upload failed for thread {thread_id}: {message}");
+        }
+    });
+}
+
+fn spawn_post_attachment_save(
+    db: PgPool,
+    storage: crate::storage::SupabaseStorage,
+    post_id: i32,
+    user_id: i32,
+    images: Vec<PendingUpload>,
+) {
+    if images.is_empty() {
+        return;
+    }
+
+    actix_web::rt::spawn(async move {
+        if let Err(message) = save_post_attachments(&db, &storage, post_id, user_id, images).await {
+            eprintln!("Forum attachment upload failed for post {post_id}: {message}");
+        }
+    });
 }
 
 async fn save_thread_attachments(
@@ -2409,7 +2502,11 @@ async fn log_moderation(
 async fn parse_forum_multipart(mut payload: Multipart) -> Result<ForumMultipartData, String> {
     let mut data = ForumMultipartData::default();
 
-    while let Some(mut field) = payload.try_next().await.map_err(|error| error.to_string())? {
+    while let Some(mut field) = payload
+        .try_next()
+        .await
+        .map_err(|error| error.to_string())?
+    {
         let Some(disposition) = field.content_disposition() else {
             continue;
         };
