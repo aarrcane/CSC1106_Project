@@ -215,10 +215,10 @@ pub async fn quiz_list(
                      WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL) AS attempts_used,
                   (SELECT a.score::float4 FROM quiz_attempts a
                      WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL
-                     ORDER BY a.submitted_at DESC LIMIT 1) AS last_score,
+                     ORDER BY a.score DESC, a.submitted_at DESC LIMIT 1) AS last_score,
                   (SELECT a.total_marks FROM quiz_attempts a
                      WHERE a.quiz_id = q.id AND a.student_id = $1 AND a.submitted_at IS NOT NULL
-                     ORDER BY a.submitted_at DESC LIMIT 1) AS last_total,
+                     ORDER BY a.score DESC, a.submitted_at DESC LIMIT 1) AS last_total,
                   q.attempts_allowed
              FROM quizzes q
              JOIN courses c ON c.id = q.course_id
@@ -780,7 +780,7 @@ pub async fn result(
         r#"SELECT id, score::float4 AS score, total_marks, to_char(submitted_at, 'DD Mon YYYY, HH24:MI') AS submitted_at
              FROM quiz_attempts
             WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NOT NULL
-            ORDER BY submitted_at DESC LIMIT 1"#,
+            ORDER BY submitted_at DESC, id DESC LIMIT 1"#,
     )
     .bind(quiz_id)
     .bind(student_id)
