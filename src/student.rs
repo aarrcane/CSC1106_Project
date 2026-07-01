@@ -1,9 +1,9 @@
-﻿use actix_session::Session;
+use actix_session::Session;
 use actix_web::{HttpResponse, Responder, web};
 use sqlx::PgPool;
 use tera::{Context, Tera};
 
-use crate::admin::{log_audit_event, AuditActor};
+use crate::admin::{AuditActor, log_audit_event};
 use crate::auth::UserRole;
 
 #[derive(serde::Serialize, sqlx::FromRow)]
@@ -323,7 +323,11 @@ pub async fn student_dashboard(
         .await
         .unwrap_or_default()
         .into_iter()
-        .map(|(title, course, date)| crate::AnnouncementContext { title, course, date })
+        .map(|(title, course, date)| crate::AnnouncementContext {
+            title,
+            course,
+            date,
+        })
         .collect()
     } else {
         Vec::new()
@@ -468,7 +472,7 @@ pub async fn student_courses(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-// ── ASSIGNMENTS 
+// ── ASSIGNMENTS
 
 pub async fn student_assignments(
     tmpl: web::Data<Tera>,
@@ -542,7 +546,7 @@ pub async fn student_assignments(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-// ── ASSIGNMENTS DATA (JSON) 
+// ── ASSIGNMENTS DATA (JSON)
 
 pub async fn student_assignments_data(
     db: web::Data<PgPool>,
@@ -914,7 +918,10 @@ pub async fn student_announcement(
             crate::insert_student_base(&mut ctx, &user.display_name, "");
             ctx.insert("active_page", "announcements");
             ctx.insert("courses", &Vec::<crate::CourseContext>::new());
-            ctx.insert("announcements", &Vec::<crate::AnnouncementFullContext>::new());
+            ctx.insert(
+                "announcements",
+                &Vec::<crate::AnnouncementFullContext>::new(),
+            );
             let rendered = match tmpl.render("student/announcement.html", &ctx) {
                 Ok(html) => html,
                 Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
@@ -985,9 +992,8 @@ pub async fn student_announcement(
         is_new: bool,
     }
 
-    let announcements: Vec<crate::AnnouncementFullContext> =
-        sqlx::query_as::<_, AnnouncementRow>(
-            "SELECT
+    let announcements: Vec<crate::AnnouncementFullContext> = sqlx::query_as::<_, AnnouncementRow>(
+        "SELECT
                 a.id,
                 a.title,
                 c.course_name AS course,
@@ -1000,22 +1006,22 @@ pub async fn student_announcement(
              JOIN enrollments e ON e.course_id = c.id
              WHERE e.student_id = $1
              ORDER BY a.created_at DESC",
-        )
-        .bind(student.id)
-        .fetch_all(db.get_ref())
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|row| crate::AnnouncementFullContext {
-            id: row.id,
-            title: row.title,
-            course: row.course,
-            course_code: row.course_code,
-            date: row.date,
-            content: row.content,
-            is_new: row.is_new,
-        })
-        .collect();
+    )
+    .bind(student.id)
+    .fetch_all(db.get_ref())
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .map(|row| crate::AnnouncementFullContext {
+        id: row.id,
+        title: row.title,
+        course: row.course,
+        course_code: row.course_code,
+        date: row.date,
+        content: row.content,
+        is_new: row.is_new,
+    })
+    .collect();
     ctx.insert("announcements", &announcements);
 
     let rendered = match tmpl.render("student/announcement.html", &ctx) {
@@ -1024,7 +1030,6 @@ pub async fn student_announcement(
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
-
 
 pub async fn student_profile_page(
     tmpl: web::Data<Tera>,
@@ -1064,7 +1069,11 @@ pub async fn student_profile_page(
     };
 
     let mut ctx = Context::new();
-    crate::insert_student_base(&mut ctx, &user.display_name, &profile.student_id.to_string());
+    crate::insert_student_base(
+        &mut ctx,
+        &user.display_name,
+        &profile.student_id.to_string(),
+    );
     ctx.insert("active_page", "profile");
     ctx.insert("profile", &profile);
 
@@ -1126,7 +1135,11 @@ pub async fn student_settings_submit(
     };
 
     let form = form.into_inner();
-    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
+    let theme_mode = if form.theme_mode == "dark" {
+        "dark"
+    } else {
+        "light"
+    };
 
     if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
         return HttpResponse::InternalServerError().body(error.to_string());
@@ -1177,7 +1190,10 @@ pub async fn student_settings_submit(
     .await;
 
     let _ = session.insert("settings_success", "Settings saved.");
-    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    let cookie_val = format!(
+        "lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax",
+        theme_mode
+    );
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/student/settings"))
         .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))

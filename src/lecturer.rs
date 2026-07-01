@@ -7,7 +7,7 @@ use serde_json::json;
 use sqlx::PgPool;
 use tera::{Context, Tera};
 
-use crate::admin::{log_audit_event, AuditActor};
+use crate::admin::{AuditActor, log_audit_event};
 use crate::auth::UserRole;
 
 #[derive(Serialize, sqlx::FromRow)]
@@ -751,17 +751,259 @@ pub async fn lecturer_quizzes_page(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
-pub async fn lecturer_grades_page(tmpl: web::Data<Tera>, session: Session) -> impl Responder {
-    let user = match crate::auth::require_role(&session, UserRole::Lecturer) {
-        Ok(u) => u,
+pub async fn lecturer_grades_page(
+    tmpl: web::Data<Tera>,
+    db: web::Data<PgPool>,
+    session: Session,
+) -> impl Responder {
+    let (user, lecturer_id) = match get_lecturer(&session, db.get_ref()).await {
+        Ok(v) => v,
         Err(r) => return r,
     };
-    let ctx = base_ctx(&user, "grades");
+
+    #[derive(Serialize)]
+    struct LecturerGradeStudent {
+        student_id: i32,
+        student_name: String,
+        email: String,
+        assignment_score: f32,
+        assignment_max: f32,
+        assignment_percent: f32,
+        quiz_score: f32,
+        quiz_max: f32,
+        quiz_percent: f32,
+        overall_percent: f32,
+        grade_letter: String,
+        graded_assignment_count: i64,
+        graded_quiz_count: i64,
+    }
+
+    #[derive(Serialize)]
+    struct LecturerGradeCourse {
+        id: i32,
+        code: String,
+        name: String,
+        trimester: String,
+        students: Vec<LecturerGradeStudent>,
+        student_count: usize,
+        course_average: f32,
+        at_risk_count: usize,
+    }
+
+    #[derive(sqlx::FromRow)]
+    struct GradebookRow {
+        course_id: i32,
+        course_code: String,
+        course_name: String,
+        trimester: String,
+        student_id: i32,
+        student_name: String,
+        email: String,
+        assignment_score: f64,
+        assignment_max: f64,
+        quiz_score: f64,
+        quiz_max: f64,
+        graded_assignment_count: i64,
+        graded_quiz_count: i64,
+    }
+
+    let rows = match sqlx::query_as::<_, GradebookRow>(
+        r#"WITH assignment_totals AS (
+               SELECT
+                   a.course_id,
+                   s.student_id,
+                   SUM(s.grade)::float8 AS assignment_score,
+                   SUM(a.max_score)::float8 AS assignment_max,
+                   COUNT(*)::BIGINT AS graded_assignment_count
+               FROM submissions s
+               JOIN assignments a ON a.id = s.assignment_id
+               JOIN courses c ON c.id = a.course_id
+               WHERE c.lecturer_id = $1
+                 AND s.status = 'graded'
+                 AND s.grade IS NOT NULL
+               GROUP BY a.course_id, s.student_id
+           ),
+           quiz_best AS (
+               SELECT
+                   q.course_id,
+                   qa.student_id,
+                   q.id AS quiz_id,
+                   MAX(qa.score)::float8 AS quiz_score,
+                   q.total_marks::float8 AS quiz_max
+               FROM quizzes q
+               JOIN quiz_attempts qa ON qa.quiz_id = q.id
+               JOIN courses c ON c.id = q.course_id
+               WHERE c.lecturer_id = $1
+                 AND q.is_practice = FALSE
+                 AND qa.submitted_at IS NOT NULL
+                 AND qa.score IS NOT NULL
+               GROUP BY q.course_id, qa.student_id, q.id, q.total_marks
+           ),
+           quiz_totals AS (
+               SELECT
+                   course_id,
+                   student_id,
+                   SUM(quiz_score)::float8 AS quiz_score,
+                   SUM(quiz_max)::float8 AS quiz_max,
+                   COUNT(*)::BIGINT AS graded_quiz_count
+               FROM quiz_best
+               GROUP BY course_id, student_id
+           )
+           SELECT
+               c.id AS course_id,
+               c.course_code,
+               c.course_name,
+               COALESCE(c.trimester, '') AS trimester,
+               st.id AS student_id,
+               u.display_name AS student_name,
+               u.email,
+               COALESCE(at.assignment_score, 0)::float8 AS assignment_score,
+               COALESCE(at.assignment_max, 0)::float8 AS assignment_max,
+               COALESCE(qt.quiz_score, 0)::float8 AS quiz_score,
+               COALESCE(qt.quiz_max, 0)::float8 AS quiz_max,
+               COALESCE(at.graded_assignment_count, 0)::BIGINT AS graded_assignment_count,
+               COALESCE(qt.graded_quiz_count, 0)::BIGINT AS graded_quiz_count
+           FROM courses c
+           JOIN enrollments e ON e.course_id = c.id
+           JOIN students st ON st.id = e.student_id
+           JOIN users u ON u.id = st.user_id
+           LEFT JOIN assignment_totals at
+             ON at.course_id = c.id AND at.student_id = st.id
+           LEFT JOIN quiz_totals qt
+             ON qt.course_id = c.id AND qt.student_id = st.id
+           WHERE c.lecturer_id = $1
+           ORDER BY c.course_code, u.display_name"#,
+    )
+    .bind(lecturer_id)
+    .fetch_all(db.get_ref())
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
+    };
+
+    let mut courses: Vec<LecturerGradeCourse> = Vec::new();
+    for row in rows {
+        let assignment_percent = percent(row.assignment_score, row.assignment_max);
+        let quiz_percent = percent(row.quiz_score, row.quiz_max);
+        let overall_percent = percent(
+            row.assignment_score + row.quiz_score,
+            row.assignment_max + row.quiz_max,
+        );
+
+        let student = LecturerGradeStudent {
+            student_id: row.student_id,
+            student_name: row.student_name,
+            email: row.email,
+            assignment_score: row.assignment_score as f32,
+            assignment_max: row.assignment_max as f32,
+            assignment_percent,
+            quiz_score: row.quiz_score as f32,
+            quiz_max: row.quiz_max as f32,
+            quiz_percent,
+            overall_percent,
+            grade_letter: lecturer_grade_letter(overall_percent).to_string(),
+            graded_assignment_count: row.graded_assignment_count,
+            graded_quiz_count: row.graded_quiz_count,
+        };
+
+        if let Some(course) = courses.iter_mut().find(|course| course.id == row.course_id) {
+            course.students.push(student);
+        } else {
+            courses.push(LecturerGradeCourse {
+                id: row.course_id,
+                code: row.course_code,
+                name: row.course_name,
+                trimester: row.trimester,
+                students: vec![student],
+                student_count: 0,
+                course_average: 0.0,
+                at_risk_count: 0,
+            });
+        }
+    }
+
+    for course in &mut courses {
+        course.student_count = course.students.len();
+        course.course_average = if course.students.is_empty() {
+            0.0
+        } else {
+            course
+                .students
+                .iter()
+                .map(|student| student.overall_percent)
+                .sum::<f32>()
+                / course.students.len() as f32
+        };
+        course.at_risk_count = course
+            .students
+            .iter()
+            .filter(|student| {
+                student.assignment_max + student.quiz_max > 0.0 && student.overall_percent < 60.0
+            })
+            .count();
+    }
+
+    let total_students: usize = courses.iter().map(|course| course.student_count).sum();
+    let graded_students: usize = courses
+        .iter()
+        .flat_map(|course| &course.students)
+        .filter(|student| student.assignment_max + student.quiz_max > 0.0)
+        .count();
+    let overall_average = if graded_students == 0 {
+        0
+    } else {
+        (courses
+            .iter()
+            .flat_map(|course| &course.students)
+            .filter(|student| student.assignment_max + student.quiz_max > 0.0)
+            .map(|student| student.overall_percent)
+            .sum::<f32>()
+            / graded_students as f32)
+            .round() as i32
+    };
+
+    let mut ctx = base_ctx(&user, "grades");
+    ctx.insert("courses", &courses);
+    ctx.insert("course_count", &courses.len());
+    ctx.insert("student_count", &total_students);
+    ctx.insert("graded_students", &graded_students);
+    ctx.insert("overall_average", &overall_average);
     let rendered = match tmpl.render("lecturer/grades.html", &ctx) {
         Ok(h) => h,
         Err(e) => return HttpResponse::InternalServerError().body(e.to_string()),
     };
     HttpResponse::Ok().content_type("text/html").body(rendered)
+}
+
+fn percent(score: f64, max_score: f64) -> f32 {
+    if max_score > 0.0 {
+        (score / max_score * 100.0) as f32
+    } else {
+        0.0
+    }
+}
+
+fn lecturer_grade_letter(score: f32) -> &'static str {
+    if score >= 85.0 {
+        "A"
+    } else if score >= 80.0 {
+        "A-"
+    } else if score >= 75.0 {
+        "B+"
+    } else if score >= 70.0 {
+        "B"
+    } else if score >= 65.0 {
+        "B-"
+    } else if score >= 60.0 {
+        "C+"
+    } else if score >= 55.0 {
+        "C"
+    } else if score >= 50.0 {
+        "D"
+    } else {
+        "F"
+    }
 }
 
 pub async fn lecturer_profile_page(
@@ -849,7 +1091,11 @@ pub async fn lecturer_settings_submit(
     };
 
     let form = form.into_inner();
-    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
+    let theme_mode = if form.theme_mode == "dark" {
+        "dark"
+    } else {
+        "light"
+    };
 
     if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
         return HttpResponse::InternalServerError().body(error.to_string());
@@ -900,7 +1146,10 @@ pub async fn lecturer_settings_submit(
     .await;
 
     let _ = session.insert("settings_success", "Settings saved.");
-    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    let cookie_val = format!(
+        "lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax",
+        theme_mode
+    );
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/lecturer/settings"))
         .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))
@@ -1177,7 +1426,10 @@ pub async fn grade_submission(
                 &actor,
                 Some("submission"),
                 Some(submission_id),
-                Some(format!("Marked submission as graded with score {}", form.grade)),
+                Some(format!(
+                    "Marked submission as graded with score {}",
+                    form.grade
+                )),
             )
             .await;
             HttpResponse::Ok().json(json!({ "ok": true }))

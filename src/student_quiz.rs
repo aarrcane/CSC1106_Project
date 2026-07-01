@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, web};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use tera::{Context, Tera};
@@ -21,7 +21,11 @@ async fn student_id_for_user(db: &PgPool, user_id: i32) -> Result<Option<i32>, s
 }
 
 // True if the quiz exists AND the student is enrolled in its course.
-async fn student_can_access(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<bool, sqlx::Error> {
+async fn student_can_access(
+    db: &PgPool,
+    quiz_id: i32,
+    student_id: i32,
+) -> Result<bool, sqlx::Error> {
     let found: Option<i32> = sqlx::query_scalar(
         r#"SELECT q.id
              FROM quizzes q
@@ -75,7 +79,11 @@ async fn attempts_allowed(db: &PgPool, quiz_id: i32) -> Result<i32, sqlx::Error>
 }
 
 // The in-progress (not yet submitted) attempt for this student+quiz, if any.
-async fn in_progress_attempt(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<Option<i32>, sqlx::Error> {
+async fn in_progress_attempt(
+    db: &PgPool,
+    quiz_id: i32,
+    student_id: i32,
+) -> Result<Option<i32>, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
         "SELECT id FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NULL ORDER BY id DESC LIMIT 1",
     )
@@ -236,7 +244,13 @@ pub async fn quiz_list(
             } else {
                 "open"
             };
-            let score = r.last_score.map(|s| format!("{} / {}", s.round() as i32, r.last_total.unwrap_or(r.total_marks)));
+            let score = r.last_score.map(|s| {
+                format!(
+                    "{} / {}",
+                    s.round() as i32,
+                    r.last_total.unwrap_or(r.total_marks)
+                )
+            });
             crate::QuizContext {
                 id: r.id,
                 title: r.title.clone(),
@@ -287,7 +301,10 @@ pub async fn quiz_list(
         .collect();
 
     let open_count = quizzes.iter().filter(|q| q.status == "open").count();
-    let upcoming_count = quizzes.iter().filter(|q| q.status == "upcoming" || q.status == "open").count();
+    let upcoming_count = quizzes
+        .iter()
+        .filter(|q| q.status == "upcoming" || q.status == "open")
+        .count();
     let completed_count = quizzes.iter().filter(|q| q.status == "completed").count();
     let missed_count = quizzes.iter().filter(|q| q.status == "missed").count();
 
@@ -358,9 +375,18 @@ pub async fn attempt_gate(
     crate::insert_student_base(&mut ctx, &user.display_name, &student_id.to_string());
     ctx.insert("active_page", "quizzes");
     ctx.insert("quiz", &quiz);
-    ctx.insert("monitoring_event_url", &format!("/student/quizzes/{quiz_id}/monitoring-events"));
-    ctx.insert("monitoring_ready_url", &format!("/student/quizzes/{quiz_id}/monitoring-ready"));
-    ctx.insert("quiz_start_url", &format!("/student/quizzes/{quiz_id}/take"));
+    ctx.insert(
+        "monitoring_event_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
+    );
+    ctx.insert(
+        "monitoring_ready_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
+    );
+    ctx.insert(
+        "quiz_start_url",
+        &format!("/student/quizzes/{quiz_id}/take"),
+    );
     render(&tmpl, "student/quiz_attempt.html", &ctx)
 }
 
@@ -418,11 +444,15 @@ pub async fn take(
         Ok(None) => {
             let used = match attempts_used(db.get_ref(), quiz_id, student_id).await {
                 Ok(n) => n,
-                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+                Err(e) => {
+                    return HttpResponse::InternalServerError().body(format!("DB error: {e}"));
+                }
             };
             let allowed = match attempts_allowed(db.get_ref(), quiz_id).await {
                 Ok(n) => n,
-                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+                Err(e) => {
+                    return HttpResponse::InternalServerError().body(format!("DB error: {e}"));
+                }
             };
             if used >= allowed as i64 {
                 return HttpResponse::SeeOther()
@@ -431,8 +461,12 @@ pub async fn take(
             }
             match create_attempt_with_subset(db.get_ref(), quiz_id, student_id).await {
                 Ok(Some(id)) => id,
-                Ok(None) => return HttpResponse::BadRequest().body("This quiz has no questions yet."),
-                Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
+                Ok(None) => {
+                    return HttpResponse::BadRequest().body("This quiz has no questions yet.");
+                }
+                Err(e) => {
+                    return HttpResponse::InternalServerError().body(format!("DB error: {e}"));
+                }
             }
         }
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
@@ -464,7 +498,10 @@ pub async fn take(
             options: q
                 .options
                 .iter()
-                .map(|o| TakeOption { id: o.id, option_text: o.option_text.clone() })
+                .map(|o| TakeOption {
+                    id: o.id,
+                    option_text: o.option_text.clone(),
+                })
                 .collect(),
         })
         .collect();
@@ -484,8 +521,14 @@ pub async fn take(
     ctx.insert("questions", &questions);
     ctx.insert("quiz_seconds", &(QUIZ_DURATION_MINS * 60));
     ctx.insert("submit_url", &format!("/student/quizzes/{quiz_id}/submit"));
-    ctx.insert("monitoring_event_url", &format!("/student/quizzes/{quiz_id}/monitoring-events"));
-    ctx.insert("monitoring_ready_url", &format!("/student/quizzes/{quiz_id}/monitoring-ready"));
+    ctx.insert(
+        "monitoring_event_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-events"),
+    );
+    ctx.insert(
+        "monitoring_ready_url",
+        &format!("/student/quizzes/{quiz_id}/monitoring-ready"),
+    );
     render(&tmpl, "student/quiz_take.html", &ctx)
 }
 
@@ -633,7 +676,8 @@ pub async fn submit(
     };
 
     // Grade only the questions that were served for this attempt.
-    let questions = match crate::quiz_engine::load_served_questions(db.get_ref(), attempt_id).await {
+    let questions = match crate::quiz_engine::load_served_questions(db.get_ref(), attempt_id).await
+    {
         Ok(q) if !q.is_empty() => q,
         Ok(_) => return submit_err("This attempt has no questions."),
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
@@ -677,7 +721,11 @@ pub async fn submit(
 }
 
 fn submit_err(msg: &str) -> HttpResponse {
-    HttpResponse::BadRequest().json(SubmitResult { ok: false, message: msg.into(), redirect: None })
+    HttpResponse::BadRequest().json(SubmitResult {
+        ok: false,
+        message: msg.into(),
+        redirect: None,
+    })
 }
 
 // Result

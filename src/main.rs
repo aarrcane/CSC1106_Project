@@ -20,13 +20,13 @@ mod attendance;
 mod auth;
 mod forum;
 mod lecturer;
+mod quiz_engine;
 mod storage;
 mod student;
-mod student_quiz;
 mod student_practice;
-mod quiz_engine;
+mod student_quiz;
+use crate::admin::{AuditActor, log_audit_event};
 use storage::SupabaseStorage;
-use crate::admin::{log_audit_event, AuditActor};
 
 // ─── Shared Context Types ─────────────────────────────────────────────────────
 mod lecturer_quiz;
@@ -692,7 +692,10 @@ async fn main() -> std::io::Result<()> {
             )
             .route("/admin/courses", web::get().to(admin::admin_courses_page))
             .route("/admin/settings", web::get().to(admin::admin_settings_page))
-            .route("/admin/settings", web::post().to(admin::admin_settings_submit))
+            .route(
+                "/admin/settings",
+                web::post().to(admin::admin_settings_submit),
+            )
             .route("/admin/audit", web::get().to(admin::admin_audit_page))
             .route("/admin/course/create", web::post().to(admin::create_course))
             .route(

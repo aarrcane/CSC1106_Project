@@ -2,9 +2,296 @@
 
 {% block title %}Grades - Lecturer{% endblock %}
 
+{% block extra_css %}
+<style>
+  .grade-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .grade-stat {
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .grade-stat-value {
+    font-size: 1.65rem;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--color-text, #111827);
+  }
+
+  .grade-stat-label {
+    margin-top: 0.35rem;
+    color: var(--color-text-muted, #6b7280);
+    font-size: 0.82rem;
+  }
+
+  .course-grade-section {
+    margin-bottom: 1rem;
+    border: 1px solid var(--color-border, #e5e7eb);
+    border-radius: 0.5rem;
+    background: var(--color-surface, #fff);
+    overflow: hidden;
+  }
+
+  .course-grade-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid var(--color-divider, #e5e7eb);
+    background: var(--color-bg, #f9fafb);
+  }
+
+  .course-code {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.18rem 0.55rem;
+    background: #e0f2fe;
+    color: #0369a1;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-right: 0.5rem;
+  }
+
+  .course-title {
+    font-weight: 700;
+    color: var(--color-text, #111827);
+  }
+
+  .course-meta {
+    color: var(--color-text-muted, #6b7280);
+    font-size: 0.8rem;
+    margin-top: 0.25rem;
+  }
+
+  .course-average {
+    text-align: right;
+    min-width: 110px;
+  }
+
+  .course-average-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+  }
+
+  .grade-table {
+    margin: 0;
+    min-width: 820px;
+  }
+
+  .grade-table th {
+    font-size: 0.74rem;
+    color: var(--color-text-muted, #6b7280);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+  }
+
+  .student-cell {
+    min-width: 220px;
+  }
+
+  .student-name {
+    font-weight: 700;
+    color: var(--color-text, #111827);
+  }
+
+  .student-email {
+    color: var(--color-text-muted, #6b7280);
+    font-size: 0.78rem;
+  }
+
+  .score-muted {
+    color: var(--color-text-muted, #6b7280);
+    font-size: 0.78rem;
+  }
+
+  .grade-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.3rem;
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .grade-good { background: #dcfce7; color: #166534; }
+  .grade-mid { background: #fef3c7; color: #92400e; }
+  .grade-low { background: #fee2e2; color: #991b1b; }
+  .grade-empty { background: #f3f4f6; color: #6b7280; }
+
+  .progress-thin {
+    height: 0.4rem;
+    border-radius: 999px;
+    background: #e5e7eb;
+    overflow: hidden;
+  }
+
+  .progress-thin > span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+
+  @media (max-width: 768px) {
+    .course-grade-header {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .course-average {
+      text-align: left;
+    }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container py-4">
-  <h4>Grades</h4>
-  <p class="text-muted">No gradebook records are available yet. Graded assignment submissions can be reviewed from Assignments.</p>
+<div class="container-fluid py-4">
+  <div class="page-header">
+    <div class="page-header-left">
+      <h4>Grades</h4>
+      <p>Student performance across your assigned courses</p>
+    </div>
+  </div>
+
+  <div class="grade-summary">
+    <div class="grade-stat">
+      <div class="grade-stat-value">{{ course_count }}</div>
+      <div class="grade-stat-label">Assigned Courses</div>
+    </div>
+    <div class="grade-stat">
+      <div class="grade-stat-value">{{ student_count }}</div>
+      <div class="grade-stat-label">Enrolled Students</div>
+    </div>
+    <div class="grade-stat">
+      <div class="grade-stat-value">{{ graded_students }}</div>
+      <div class="grade-stat-label">Students With Grades</div>
+    </div>
+    <div class="grade-stat">
+      <div class="grade-stat-value">{{ overall_average }}%</div>
+      <div class="grade-stat-label">Overall Average</div>
+    </div>
+  </div>
+
+  {% for course in courses %}
+  <section class="course-grade-section">
+    <div class="course-grade-header">
+      <div>
+        <div>
+          <span class="course-code">{{ course.code }}</span>
+          <span class="course-title">{{ course.name }}</span>
+        </div>
+        <div class="course-meta">
+          {{ course.student_count }} student{% if course.student_count != 1 %}s{% endif %}
+          {% if course.trimester %} &middot; {{ course.trimester }}{% endif %}
+          {% if course.at_risk_count > 0 %} &middot; {{ course.at_risk_count }} at risk{% endif %}
+        </div>
+      </div>
+      <div class="course-average">
+        <div class="course-average-value
+          {% if course.course_average >= 80 %}text-success{% elif course.course_average >= 60 %}text-warning{% else %}text-danger{% endif %}">
+          {{ course.course_average | round(precision=0) }}%
+        </div>
+        <div class="score-muted">Course average</div>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle grade-table">
+        <thead class="table-light">
+          <tr>
+            <th class="ps-4">Student</th>
+            <th>Assignments</th>
+            <th>Quizzes</th>
+            <th>Overall</th>
+            <th>Grade</th>
+            <th style="width: 180px;">Progress</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for student in course.students %}
+          {% set has_grade = student.assignment_max + student.quiz_max > 0 %}
+          <tr>
+            <td class="ps-4 student-cell">
+              <div class="student-name">{{ student.student_name }}</div>
+              <div class="student-email">{{ student.email }}</div>
+            </td>
+            <td>
+              {% if student.assignment_max > 0 %}
+              <div class="fw-semibold">{{ student.assignment_percent | round(precision=0) }}%</div>
+              <div class="score-muted">
+                {{ student.assignment_score | round(precision=1) }} / {{ student.assignment_max | round(precision=1) }}
+                &middot; {{ student.graded_assignment_count }} graded
+              </div>
+              {% else %}
+              <span class="score-muted">No graded assignments</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if student.quiz_max > 0 %}
+              <div class="fw-semibold">{{ student.quiz_percent | round(precision=0) }}%</div>
+              <div class="score-muted">
+                {{ student.quiz_score | round(precision=1) }} / {{ student.quiz_max | round(precision=1) }}
+                &middot; {{ student.graded_quiz_count }} completed
+              </div>
+              {% else %}
+              <span class="score-muted">No completed quizzes</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if has_grade %}
+              <div class="fw-bold">{{ student.overall_percent | round(precision=0) }}%</div>
+              <div class="score-muted">
+                {{ (student.assignment_score + student.quiz_score) | round(precision=1) }}
+                / {{ (student.assignment_max + student.quiz_max) | round(precision=1) }}
+              </div>
+              {% else %}
+              <span class="score-muted">Pending</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if has_grade %}
+              <span class="grade-pill
+                {% if student.overall_percent >= 80 %}grade-good{% elif student.overall_percent >= 60 %}grade-mid{% else %}grade-low{% endif %}">
+                {{ student.grade_letter }}
+              </span>
+              {% else %}
+              <span class="grade-pill grade-empty">-</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="progress-thin">
+                <span class="{% if student.overall_percent >= 80 %}bg-success{% elif student.overall_percent >= 60 %}bg-warning{% else %}bg-danger{% endif %}"
+                      style="width: {{ student.overall_percent }}%;"></span>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endfor %}
+
+  {% if courses | length == 0 %}
+  <div class="course-grade-section">
+    <div class="p-5 text-center text-muted">
+      <i class="bi bi-bar-chart-line fs-1 d-block mb-2 opacity-25"></i>
+      No enrolled students are available for your assigned courses yet.
+    </div>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

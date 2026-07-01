@@ -43,12 +43,11 @@
     } catch (e) {}
   }
 
-  var savedTheme = '{{ preferences.theme_mode }}';
-  if (savedTheme === 'dark') {
-    applyTheme('dark');
-  } else {
-    applyTheme('light');
-  }
+  var cookie = document.cookie.split('; ').find(function (r) { return r.indexOf('lms-theme=') === 0; });
+  var savedTheme = cookie ? decodeURIComponent(cookie.split('=')[1]) : '{{ preferences.theme_mode }}';
+  applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+  var activeInput = document.querySelector('input[name="theme_mode"][value="' + (savedTheme === 'dark' ? 'dark' : 'light') + '"]');
+  if (activeInput) activeInput.checked = true;
 
   document.querySelectorAll('input[name="theme_mode"]').forEach(function (input) {
     input.addEventListener('change', function () { applyTheme(input.value); });

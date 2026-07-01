@@ -18,11 +18,9 @@
 <script>
   (function () {
     try {
-      var theme = '{{ preferences.theme_mode | default(value="") }}';
-      if (!theme) {
-        var cookie = document.cookie.split('; ').find(function (r) { return r.indexOf('lms-theme=') === 0; });
-        theme = cookie ? decodeURIComponent(cookie.split('=')[1]) : 'light';
-      }
+      var cookie = document.cookie.split('; ').find(function (r) { return r.indexOf('lms-theme=') === 0; });
+      var theme = cookie ? decodeURIComponent(cookie.split('=')[1]) : '{{ preferences.theme_mode | default(value="") }}';
+      if (!theme) theme = 'light';
       if (theme === 'dark') {
         document.documentElement.classList.add('theme-dark');
         document.documentElement.setAttribute('data-bs-theme', 'dark');

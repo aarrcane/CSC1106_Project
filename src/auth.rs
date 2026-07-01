@@ -5,7 +5,7 @@ use serde::Deserialize;
 use sqlx::{FromRow, PgPool};
 use tera::{Context, Tera};
 
-use crate::admin::{log_audit_event, AuditActor};
+use crate::admin::{AuditActor, log_audit_event};
 
 const SESSION_USER_ID: &str = "user_id";
 const SESSION_ROLE: &str = "role";
@@ -90,7 +90,12 @@ pub async fn login_submit(
 ) -> HttpResponse {
     let email = form.email.trim().to_lowercase();
     if email.is_empty() || form.password.is_empty() {
-        return render_login(tmpl.get_ref(), &email, "Email and password are required.", true);
+        return render_login(
+            tmpl.get_ref(),
+            &email,
+            "Email and password are required.",
+            true,
+        );
     }
 
     let user = match find_user_by_email(db.get_ref(), &email).await {
@@ -105,7 +110,12 @@ pub async fn login_submit(
     };
 
     if !user.is_active {
-        return render_login(tmpl.get_ref(), &email, "This account is currently inactive.", true);
+        return render_login(
+            tmpl.get_ref(),
+            &email,
+            "This account is currently inactive.",
+            true,
+        );
     }
 
     if !verify_password(&form.password, &user.password_hash) {
@@ -141,15 +151,14 @@ pub async fn login_submit(
     }
 
     // Fetch user's saved theme (default to light) and set a cookie so pages can apply it immediately
-    let theme_mode: String = sqlx::query_scalar(
-        "SELECT theme_mode FROM user_preferences WHERE user_id = $1",
-    )
-    .bind(user.id)
-    .fetch_optional(db.get_ref())
-    .await
-    .ok()
-    .flatten()
-    .unwrap_or_else(|| "light".to_string());
+    let theme_mode: String =
+        sqlx::query_scalar("SELECT theme_mode FROM user_preferences WHERE user_id = $1")
+            .bind(user.id)
+            .fetch_optional(db.get_ref())
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| "light".to_string());
 
     let Some(role) = UserRole::from_slug(&user.role) else {
         return HttpResponse::InternalServerError().body("Unknown user role");
@@ -160,18 +169,24 @@ pub async fn login_submit(
     builder.insert_header((header::LOCATION, location));
     builder.insert_header((header::CACHE_CONTROL, "no-store"));
 
-    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    let cookie_val = format!(
+        "lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax",
+        theme_mode
+    );
     builder.insert_header((header::SET_COOKIE, cookie_val));
 
     builder.finish()
 }
 
 pub async fn logout(db: web::Data<PgPool>, session: Session) -> HttpResponse {
-    let actor = current_user(&session).ok().flatten().map(|user| AuditActor {
-        user_id: Some(user.id),
-        role: Some(user.role),
-        display_name: Some(user.display_name),
-    });
+    let actor = current_user(&session)
+        .ok()
+        .flatten()
+        .map(|user| AuditActor {
+            user_id: Some(user.id),
+            role: Some(user.role),
+            display_name: Some(user.display_name),
+        });
     if let Some(actor) = actor.as_ref() {
         log_audit_event(
             db.get_ref(),
@@ -187,8 +202,11 @@ pub async fn logout(db: web::Data<PgPool>, session: Session) -> HttpResponse {
     }
     session.purge();
     HttpResponse::SeeOther()
-    .insert_header((header::LOCATION, "/?logged_out=1"))
-        .insert_header((header::SET_COOKIE, "lms-theme=; Path=/; Max-Age=0; SameSite=Lax"))
+        .insert_header((header::LOCATION, "/?logged_out=1"))
+        .insert_header((
+            header::SET_COOKIE,
+            "lms-theme=; Path=/; Max-Age=0; SameSite=Lax",
+        ))
         .finish()
 }
 

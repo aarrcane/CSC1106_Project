@@ -1,10 +1,10 @@
 use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
-use tera::{Context, Tera};
+use actix_web::{HttpResponse, Responder, web};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::FromRow;
 use sqlx::PgPool;
-use serde_json::json;
+use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
@@ -143,7 +143,7 @@ struct AdminPreferenceDetails {
 
 #[derive(Deserialize)]
 pub struct AdminPreferencesForm {
-    pub theme_mode: String
+    pub theme_mode: String,
 }
 
 async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
@@ -332,13 +332,14 @@ pub async fn admin_create_user(
             None
         }
     };
-    let year_of_study = match crate::parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
-        Ok(value) => value,
-        Err(message) => {
-            validation_error = Some(message);
-            None
-        }
-    };
+    let year_of_study =
+        match crate::parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
+            Ok(value) => value,
+            Err(message) => {
+                validation_error = Some(message);
+                None
+            }
+        };
 
     if validation_error.is_none() {
         if let Some(year) = year_of_study {
@@ -360,7 +361,8 @@ pub async fn admin_create_user(
         if form.staff_no.as_deref().unwrap_or("").trim().is_empty()
             || form.department.as_deref().unwrap_or("").trim().is_empty()
         {
-            validation_error = Some("Staff number and department are required for lecturers.".to_string());
+            validation_error =
+                Some("Staff number and department are required for lecturers.".to_string());
         }
     }
 
@@ -370,7 +372,7 @@ pub async fn admin_create_user(
             .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
             .finish();
     }
-    
+
     // Always generate a temporary password (admin does not supply it)
     let tmp = crate::generate_temp_password(12);
     let temp_password = Some(tmp.clone());
@@ -414,7 +416,10 @@ pub async fn admin_create_user(
         Ok(id) => id,
         Err(error) => {
             let _ = tx.rollback().await;
-            let _ = session.insert("create_error", &format!("Failed to create user account: {error}"));
+            let _ = session.insert(
+                "create_error",
+                &format!("Failed to create user account: {error}"),
+            );
             return HttpResponse::SeeOther()
                 .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
                 .finish();
@@ -428,7 +433,12 @@ pub async fn admin_create_user(
         )
         .bind(user_id)
         .bind(age)
-        .bind(form.programme.as_deref().map(str::trim).filter(|v| !v.is_empty()))
+        .bind(
+            form.programme
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty()),
+        )
         .bind(year_of_study)
         .execute(&mut *tx)
         .await
@@ -480,7 +490,8 @@ pub async fn admin_create_user(
     // Use Post-Redirect-Get: store one-time success/temp password in session, then redirect.
     if let Some(tmp) = temp_password {
         if let Err(error) = session.insert("temp_password", &tmp) {
-            return HttpResponse::InternalServerError().body(format!("Failed to set session: {error}"));
+            return HttpResponse::InternalServerError()
+                .body(format!("Failed to set session: {error}"));
         }
     }
 
@@ -550,17 +561,22 @@ pub async fn admin_toggle_user_active(
     };
 
     let new_status = !user.is_active;
-    if let Err(error) = sqlx::query("UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2")
-        .bind(new_status)
-        .bind(user.id)
-        .execute(db.get_ref())
-        .await
+    if let Err(error) =
+        sqlx::query("UPDATE users SET is_active = $1, updated_at = NOW() WHERE id = $2")
+            .bind(new_status)
+            .bind(user.id)
+            .execute(db.get_ref())
+            .await
     {
         return HttpResponse::InternalServerError()
             .body(format!("Failed to update user account status: {error}"));
     }
 
-    let action = if new_status { "activated" } else { "deactivated" };
+    let action = if new_status {
+        "activated"
+    } else {
+        "deactivated"
+    };
     let message = format!("{} has been {action}.", user.display_name);
     let actor = AuditActor {
         user_id: Some(current_user.id),
@@ -618,13 +634,14 @@ pub async fn admin_update_user(
             None
         }
     };
-    let year_of_study = match crate::parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
-        Ok(value) => value,
-        Err(message) => {
-            validation_error = Some(message);
-            None
-        }
-    };
+    let year_of_study =
+        match crate::parse_optional_i32(form.year_of_study.as_deref(), "Year of study") {
+            Ok(value) => value,
+            Err(message) => {
+                validation_error = Some(message);
+                None
+            }
+        };
 
     if validation_error.is_none() {
         if let Some(year) = year_of_study {
@@ -646,7 +663,8 @@ pub async fn admin_update_user(
         if form.staff_no.as_deref().unwrap_or("").trim().is_empty()
             || form.department.as_deref().unwrap_or("").trim().is_empty()
         {
-            validation_error = Some("Staff number and department are required for lecturers.".to_string());
+            validation_error =
+                Some("Staff number and department are required for lecturers.".to_string());
         }
     }
 
@@ -681,7 +699,10 @@ pub async fn admin_update_user(
         Ok(result) => result.rows_affected(),
         Err(error) => {
             let _ = tx.rollback().await;
-            let _ = session.insert("user_status_error", &format!("Failed to update user account: {error}"));
+            let _ = session.insert(
+                "user_status_error",
+                &format!("Failed to update user account: {error}"),
+            );
             return HttpResponse::SeeOther()
                 .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
                 .finish();
@@ -703,23 +724,26 @@ pub async fn admin_update_user(
             .await;
 
         match delete_lecturer {
-            Ok(_) => {
-                sqlx::query(
-                    "INSERT INTO students (user_id, age, programme, year_of_study)
+            Ok(_) => sqlx::query(
+                "INSERT INTO students (user_id, age, programme, year_of_study)
                      VALUES ($1, $2, $3, $4)
                      ON CONFLICT (user_id) DO UPDATE
                      SET age = EXCLUDED.age,
                          programme = EXCLUDED.programme,
                          year_of_study = EXCLUDED.year_of_study",
-                )
-                .bind(user_id)
-                .bind(age)
-                .bind(form.programme.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-                .bind(year_of_study)
-                .execute(&mut *tx)
-                .await
-                .map(|_| ())
-            }
+            )
+            .bind(user_id)
+            .bind(age)
+            .bind(
+                form.programme
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty()),
+            )
+            .bind(year_of_study)
+            .execute(&mut *tx)
+            .await
+            .map(|_| ()),
             Err(error) => Err(error),
         }
     } else if role == "lecturer" {
@@ -729,21 +753,19 @@ pub async fn admin_update_user(
             .await;
 
         match delete_student {
-            Ok(_) => {
-                sqlx::query(
-                    "INSERT INTO lecturers (user_id, staff_no, department)
+            Ok(_) => sqlx::query(
+                "INSERT INTO lecturers (user_id, staff_no, department)
                      VALUES ($1, $2, $3)
                      ON CONFLICT (user_id) DO UPDATE
                      SET staff_no = EXCLUDED.staff_no,
                          department = EXCLUDED.department",
-                )
-                .bind(user_id)
-                .bind(form.staff_no.as_deref().unwrap_or("").trim())
-                .bind(form.department.as_deref().unwrap_or("").trim())
-                .execute(&mut *tx)
-                .await
-                .map(|_| ())
-            }
+            )
+            .bind(user_id)
+            .bind(form.staff_no.as_deref().unwrap_or("").trim())
+            .bind(form.department.as_deref().unwrap_or("").trim())
+            .execute(&mut *tx)
+            .await
+            .map(|_| ()),
             Err(error) => Err(error),
         }
     } else {
@@ -763,7 +785,10 @@ pub async fn admin_update_user(
 
     if let Err(error) = profile_result {
         let _ = tx.rollback().await;
-        let _ = session.insert("user_status_error", &format!("Failed to update user profile: {error}"));
+        let _ = session.insert(
+            "user_status_error",
+            &format!("Failed to update user profile: {error}"),
+        );
         return HttpResponse::SeeOther()
             .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
             .finish();
@@ -791,7 +816,10 @@ pub async fn admin_update_user(
     )
     .await;
 
-    let _ = session.insert("user_status_success", &format!("{display_name} has been updated."));
+    let _ = session.insert(
+        "user_status_success",
+        &format!("{display_name} has been updated."),
+    );
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
         .finish()
@@ -808,25 +836,24 @@ pub async fn admin_reset_user_password(
     };
 
     let user_id = user_id.into_inner();
-    let display_name = match sqlx::query_scalar::<_, String>(
-        "SELECT display_name FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(db.get_ref())
-    .await
-    {
-        Ok(Some(name)) => name,
-        Ok(None) => {
-            let _ = session.insert("user_status_error", "User account not found.");
-            return HttpResponse::SeeOther()
-                .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
-                .finish();
-        }
-        Err(error) => {
-            return HttpResponse::InternalServerError()
-                .body(format!("Failed to load user account: {error}"));
-        }
-    };
+    let display_name =
+        match sqlx::query_scalar::<_, String>("SELECT display_name FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_optional(db.get_ref())
+            .await
+        {
+            Ok(Some(name)) => name,
+            Ok(None) => {
+                let _ = session.insert("user_status_error", "User account not found.");
+                return HttpResponse::SeeOther()
+                    .insert_header((actix_web::http::header::LOCATION, "/admin/users"))
+                    .finish();
+            }
+            Err(error) => {
+                return HttpResponse::InternalServerError()
+                    .body(format!("Failed to load user account: {error}"));
+            }
+        };
 
     let temp_password = crate::generate_temp_password(12);
     let password_hash = match crate::hash_password(&temp_password) {
@@ -895,7 +922,7 @@ pub async fn admin_courses_page(
         name: String,
         status: String,
         trimester: String,
-        lecturer_name: String,  // "Unassigned" if NULL
+        lecturer_name: String, // "Unassigned" if NULL
     }
 
     let courses = sqlx::query_as!(
@@ -942,7 +969,7 @@ pub async fn admin_courses_page(
     ctx.insert("active_page", "courses");
     ctx.insert("is_admin", &true);
     ctx.insert("courses", &courses);
-    ctx.insert("lecturers", &lecturers);  // for the assign dropdown
+    ctx.insert("lecturers", &lecturers); // for the assign dropdown
 
     let rendered = match tmpl.render("admin/course_administration.html", &ctx) {
         Ok(html) => html,
@@ -1006,9 +1033,18 @@ pub async fn admin_content_page(
     .unwrap_or_default();
 
     let total_threads = threads.len();
-    let hidden_threads = threads.iter().filter(|thread| thread.deleted_at.is_some()).count();
-    let locked_threads = threads.iter().filter(|thread| thread.locked_at.is_some()).count();
-    let hidden_posts = posts.iter().filter(|post| post.deleted_at.is_some()).count();
+    let hidden_threads = threads
+        .iter()
+        .filter(|thread| thread.deleted_at.is_some())
+        .count();
+    let locked_threads = threads
+        .iter()
+        .filter(|thread| thread.locked_at.is_some())
+        .count();
+    let hidden_posts = posts
+        .iter()
+        .filter(|post| post.deleted_at.is_some())
+        .count();
 
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);
@@ -1057,79 +1093,86 @@ pub async fn admin_moderate_forum_thread(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("Moderated by admin");
 
-    let result = match action.as_str() {
-        "delete" => {
-            sqlx::query(
-                "UPDATE forum_threads
+    let result =
+        match action.as_str() {
+            "delete" => {
+                sqlx::query(
+                    "UPDATE forum_threads
                  SET deleted_at = NOW(), deleted_by = $1, delete_reason = $2, updated_at = NOW()
                  WHERE id = $3 AND deleted_at IS NULL",
-            )
-            .bind(user.id)
-            .bind(reason)
-            .bind(thread_id)
-            .execute(db.get_ref())
-            .await
-        }
-        "restore" => {
-            sqlx::query(
-                "UPDATE forum_threads
+                )
+                .bind(user.id)
+                .bind(reason)
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "restore" => {
+                sqlx::query(
+                    "UPDATE forum_threads
                  SET deleted_at = NULL, deleted_by = NULL, delete_reason = NULL, updated_at = NOW()
                  WHERE id = $1",
-            )
-            .bind(thread_id)
-            .execute(db.get_ref())
-            .await
-        }
-        "lock" => {
-            sqlx::query(
-                "UPDATE forum_threads
+                )
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "lock" => {
+                sqlx::query(
+                    "UPDATE forum_threads
                  SET locked_at = NOW(), locked_by = $1, updated_at = NOW()
                  WHERE id = $2 AND locked_at IS NULL",
-            )
-            .bind(user.id)
-            .bind(thread_id)
-            .execute(db.get_ref())
-            .await
-        }
-        "unlock" => {
-            sqlx::query(
-                "UPDATE forum_threads
+                )
+                .bind(user.id)
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "unlock" => {
+                sqlx::query(
+                    "UPDATE forum_threads
                  SET locked_at = NULL, locked_by = NULL, updated_at = NOW()
                  WHERE id = $1",
+                )
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "pin" => {
+                sqlx::query(
+                    "UPDATE forum_threads SET is_pinned = TRUE, updated_at = NOW() WHERE id = $1",
+                )
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "unpin" => {
+                sqlx::query(
+                    "UPDATE forum_threads SET is_pinned = FALSE, updated_at = NOW() WHERE id = $1",
+                )
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "answered" => {
+                sqlx::query(
+                    "UPDATE forum_threads SET is_answered = TRUE, updated_at = NOW() WHERE id = $1",
+                )
+                .bind(thread_id)
+                .execute(db.get_ref())
+                .await
+            }
+            "unanswered" => sqlx::query(
+                "UPDATE forum_threads SET is_answered = FALSE, updated_at = NOW() WHERE id = $1",
             )
             .bind(thread_id)
             .execute(db.get_ref())
-            .await
-        }
-        "pin" => {
-            sqlx::query("UPDATE forum_threads SET is_pinned = TRUE, updated_at = NOW() WHERE id = $1")
-                .bind(thread_id)
-                .execute(db.get_ref())
-                .await
-        }
-        "unpin" => {
-            sqlx::query("UPDATE forum_threads SET is_pinned = FALSE, updated_at = NOW() WHERE id = $1")
-                .bind(thread_id)
-                .execute(db.get_ref())
-                .await
-        }
-        "answered" => {
-            sqlx::query("UPDATE forum_threads SET is_answered = TRUE, updated_at = NOW() WHERE id = $1")
-                .bind(thread_id)
-                .execute(db.get_ref())
-                .await
-        }
-        "unanswered" => {
-            sqlx::query("UPDATE forum_threads SET is_answered = FALSE, updated_at = NOW() WHERE id = $1")
-                .bind(thread_id)
-                .execute(db.get_ref())
-                .await
-        }
-        _ => {
-            let _ = session.insert("content_error", "Unknown moderation action.");
-            return redirect_admin_content();
-        }
-    };
+            .await,
+            _ => {
+                let _ = session.insert("content_error", "Unknown moderation action.");
+                return redirect_admin_content();
+            }
+        };
 
     match result {
         Ok(done) => {
@@ -1153,7 +1196,10 @@ pub async fn admin_moderate_forum_thread(
             let _ = session.insert("content_success", &message);
         }
         Err(error) => {
-            let _ = session.insert("content_error", &format!("Failed to moderate thread: {error}"));
+            let _ = session.insert(
+                "content_error",
+                &format!("Failed to moderate thread: {error}"),
+            );
         }
     }
 
@@ -1209,14 +1255,13 @@ pub async fn admin_moderate_forum_post(
     match result {
         Ok(done) => {
             if action == "delete" {
-                let thread_id = sqlx::query_scalar::<_, i32>(
-                    "SELECT thread_id FROM forum_posts WHERE id = $1",
-                )
-                .bind(post_id)
-                .fetch_optional(db.get_ref())
-                .await
-                .ok()
-                .flatten();
+                let thread_id =
+                    sqlx::query_scalar::<_, i32>("SELECT thread_id FROM forum_posts WHERE id = $1")
+                        .bind(post_id)
+                        .fetch_optional(db.get_ref())
+                        .await
+                        .ok()
+                        .flatten();
                 let _ = record_admin_forum_action(
                     db.get_ref(),
                     user.id,
@@ -1236,7 +1281,10 @@ pub async fn admin_moderate_forum_post(
             let _ = session.insert("content_success", &message);
         }
         Err(error) => {
-            let _ = session.insert("content_error", &format!("Failed to moderate reply: {error}"));
+            let _ = session.insert(
+                "content_error",
+                &format!("Failed to moderate reply: {error}"),
+            );
         }
     }
 
@@ -1359,7 +1407,11 @@ pub async fn admin_settings_submit(
     };
 
     let form = form.into_inner();
-    let theme_mode = if form.theme_mode == "dark" { "dark" } else { "light" };
+    let theme_mode = if form.theme_mode == "dark" {
+        "dark"
+    } else {
+        "light"
+    };
 
     if let Err(error) = ensure_user_preferences_table(db.get_ref()).await {
         return HttpResponse::InternalServerError().body(error.to_string());
@@ -1397,13 +1449,15 @@ pub async fn admin_settings_submit(
     }
 
     let _ = session.insert("settings_success", "Settings saved.");
-    let cookie_val = format!("lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax", theme_mode);
+    let cookie_val = format!(
+        "lms-theme={}; Path=/; Max-Age=31536000; SameSite=Lax",
+        theme_mode
+    );
     HttpResponse::SeeOther()
         .insert_header((actix_web::http::header::LOCATION, "/admin/settings"))
         .insert_header((actix_web::http::header::SET_COOKIE, cookie_val))
         .finish()
 }
-
 
 #[derive(serde::Deserialize)]
 pub struct AuditQuery {
@@ -1424,10 +1478,13 @@ pub async fn admin_audit_page(
     };
 
     let limit = query.limit.unwrap_or(25).clamp(25, 500);
-    let category = query
-        .category
-        .as_deref()
-        .and_then(|value| if value.is_empty() || value == "all" { None } else { Some(value) });
+    let category = query.category.as_deref().and_then(|value| {
+        if value.is_empty() || value == "all" {
+            None
+        } else {
+            Some(value)
+        }
+    });
     let actor_query = query
         .actor
         .as_deref()
@@ -1476,9 +1533,7 @@ pub async fn admin_audit_page(
 }
 
 async fn fetch_count(db: &PgPool, sql: &'static str) -> Result<i64, sqlx::Error> {
-    sqlx::query_scalar::<_, i64>(sql)
-        .fetch_one(db)
-        .await
+    sqlx::query_scalar::<_, i64>(sql).fetch_one(db).await
 }
 
 #[derive(Serialize, FromRow)]
@@ -1530,11 +1585,11 @@ async fn fetch_site_logs(
            ORDER BY created_at DESC
            LIMIT $3"#,
     )
-        .bind(category)
-        .bind(actor_query)
-        .bind(limit)
-        .fetch_all(db)
-        .await
+    .bind(category)
+    .bind(actor_query)
+    .bind(limit)
+    .fetch_all(db)
+    .await
 }
 
 async fn fetch_audit_count(
@@ -1554,11 +1609,11 @@ async fn fetch_audit_count(
              )
              AND ($3::text IS NULL OR severity = $3)"#,
     )
-        .bind(category)
-        .bind(actor_query)
-        .bind(severity)
-        .fetch_one(db)
-        .await
+    .bind(category)
+    .bind(actor_query)
+    .bind(severity)
+    .fetch_one(db)
+    .await
 }
 
 #[derive(FromRow)]
@@ -1604,7 +1659,12 @@ pub async fn admin_dashboard(
                 .body(format!("Failed to load dashboard statistics: {error}"));
         }
     };
-    let admins_count = match fetch_count(db.get_ref(), "SELECT COUNT(*) FROM users WHERE role = 'admin'").await {
+    let admins_count = match fetch_count(
+        db.get_ref(),
+        "SELECT COUNT(*) FROM users WHERE role = 'admin'",
+    )
+    .await
+    {
         Ok(count) => count,
         Err(error) => {
             return HttpResponse::InternalServerError()
@@ -1660,16 +1720,24 @@ pub async fn admin_dashboard(
         }
     };
 
-    let enrollment_chart_labels: Vec<String> =
-        enrollment_points.iter().map(|point| point.label.clone()).collect();
+    let enrollment_chart_labels: Vec<String> = enrollment_points
+        .iter()
+        .map(|point| point.label.clone())
+        .collect();
     let enrollment_chart_values: Vec<i64> =
         enrollment_points.iter().map(|point| point.value).collect();
-    let enrollment_chart_labels_json = serde_json::to_string(&enrollment_chart_labels)
-        .unwrap_or_else(|_| "[]".to_string());
-    let enrollment_chart_values_json = serde_json::to_string(&enrollment_chart_values)
-        .unwrap_or_else(|_| "[]".to_string());
-    ctx.insert("enrollment_chart_labels_json", &enrollment_chart_labels_json);
-    ctx.insert("enrollment_chart_values_json", &enrollment_chart_values_json);
+    let enrollment_chart_labels_json =
+        serde_json::to_string(&enrollment_chart_labels).unwrap_or_else(|_| "[]".to_string());
+    let enrollment_chart_values_json =
+        serde_json::to_string(&enrollment_chart_values).unwrap_or_else(|_| "[]".to_string());
+    ctx.insert(
+        "enrollment_chart_labels_json",
+        &enrollment_chart_labels_json,
+    );
+    ctx.insert(
+        "enrollment_chart_values_json",
+        &enrollment_chart_values_json,
+    );
 
     let content_previews = match sqlx::query_as::<_, DashboardContentPreview>(
         r#"SELECT author, kind, title, snippet, when_label AS "when"
@@ -1861,12 +1929,9 @@ pub async fn delete_course(
     // Delete uploaded files
     let _ = std::fs::remove_dir_all(format!("uploads/courses/{}", course_id));
 
-    let result = sqlx::query!(
-        "DELETE FROM courses WHERE id = $1",
-        course_id
-    )
-    .execute(db.get_ref())
-    .await;
+    let result = sqlx::query!("DELETE FROM courses WHERE id = $1", course_id)
+        .execute(db.get_ref())
+        .await;
 
     match result {
         Ok(_) => {
@@ -1928,14 +1993,17 @@ pub async fn get_course_enrollments(
     match (enrolled, all_students) {
         (Ok(enrolled), Ok(all)) => {
             let enrolled_ids: Vec<i32> = enrolled.iter().map(|r| r.student_id).collect();
-            let all_list: Vec<serde_json::Value> = all.iter().map(|r| {
-                json!({
-                    "student_id": r.student_id,
-                    "display_name": r.display_name,
-                    "email": r.email,
-                    "enrolled": enrolled_ids.contains(&r.student_id)
+            let all_list: Vec<serde_json::Value> = all
+                .iter()
+                .map(|r| {
+                    json!({
+                        "student_id": r.student_id,
+                        "display_name": r.display_name,
+                        "email": r.email,
+                        "enrolled": enrolled_ids.contains(&r.student_id)
+                    })
                 })
-            }).collect();
+                .collect();
             HttpResponse::Ok().json(json!({ "students": all_list }))
         }
         _ => HttpResponse::InternalServerError().body("Failed to load enrollment data"),
@@ -1964,13 +2032,14 @@ pub async fn enroll_student(
         "INSERT INTO enrollments (student_id, course_id)
          VALUES ($1, $2)
          ON CONFLICT (student_id, course_id) DO NOTHING",
-        form.student_id, course_id
+        form.student_id,
+        course_id
     )
     .execute(db.get_ref())
     .await;
 
     match result {
-        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student enrolled" })),
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Student enrolled" })),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }
@@ -1995,13 +2064,14 @@ pub async fn unenroll_student(
 
     let result = sqlx::query!(
         "DELETE FROM enrollments WHERE student_id = $1 AND course_id = $2",
-        form.student_id, course_id
+        form.student_id,
+        course_id
     )
     .execute(db.get_ref())
     .await;
 
     match result {
-        Ok(_)  => HttpResponse::Ok().json(json!({ "message": "Student unenrolled" })),
+        Ok(_) => HttpResponse::Ok().json(json!({ "message": "Student unenrolled" })),
         Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
 }

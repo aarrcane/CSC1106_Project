@@ -1,5 +1,5 @@
 use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, web};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use std::collections::BTreeMap;
@@ -57,7 +57,11 @@ async fn avg_practice_proficiency(db: &PgPool, student_id: i32, course_id: i32) 
     .unwrap_or(0.5)
 }
 
-async fn in_progress_attempt(db: &PgPool, quiz_id: i32, student_id: i32) -> Result<Option<i32>, sqlx::Error> {
+async fn in_progress_attempt(
+    db: &PgPool,
+    quiz_id: i32,
+    student_id: i32,
+) -> Result<Option<i32>, sqlx::Error> {
     sqlx::query_scalar::<_, i32>(
         "SELECT id FROM quiz_attempts WHERE quiz_id = $1 AND student_id = $2 AND submitted_at IS NULL ORDER BY id DESC LIMIT 1",
     )
@@ -252,7 +256,7 @@ pub async fn practice_list(
     render(&tmpl, "student/quiz_practice.html", &ctx)
 }
 
-// ── GET /student/practice/{quiz_id}/take 
+// ── GET /student/practice/{quiz_id}/take
 #[derive(Serialize)]
 struct TakeOption {
     id: i32,
@@ -302,9 +306,13 @@ pub async fn take(
     // Resume an in-progress attempt, or start a fresh adaptive one.
     let attempt_id = match in_progress_attempt(db.get_ref(), quiz_id, student_id).await {
         Ok(Some(id)) => id,
-        Ok(None) => match create_practice_attempt(db.get_ref(), quiz_id, student_id, course_id).await {
+        Ok(None) => match create_practice_attempt(db.get_ref(), quiz_id, student_id, course_id)
+            .await
+        {
             Ok(Some(id)) => id,
-            Ok(None) => return HttpResponse::BadRequest().body("This practice quiz has no questions yet."),
+            Ok(None) => {
+                return HttpResponse::BadRequest().body("This practice quiz has no questions yet.");
+            }
             Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
         },
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
@@ -336,7 +344,10 @@ pub async fn take(
             options: q
                 .options
                 .iter()
-                .map(|o| TakeOption { id: o.id, option_text: o.option_text.clone() })
+                .map(|o| TakeOption {
+                    id: o.id,
+                    option_text: o.option_text.clone(),
+                })
                 .collect(),
         })
         .collect();
@@ -375,7 +386,11 @@ struct SubmitResult {
 }
 
 fn submit_err(msg: &str) -> HttpResponse {
-    HttpResponse::BadRequest().json(SubmitResult { ok: false, message: msg.into(), redirect: None })
+    HttpResponse::BadRequest().json(SubmitResult {
+        ok: false,
+        message: msg.into(),
+        redirect: None,
+    })
 }
 
 pub async fn submit(
@@ -478,7 +493,10 @@ async fn persist_practice_attempt(
     let mut state: BTreeMap<String, (f32, f32, i32)> = BTreeMap::new();
 
     for g in &result.graded {
-        let sub = submission.answers.iter().find(|a| a.question_id == g.question_id);
+        let sub = submission
+            .answers
+            .iter()
+            .find(|a| a.question_id == g.question_id);
         sqlx::query(
             r#"INSERT INTO quiz_answers
                    (attempt_id, question_id, selected_option_id, is_correct)
@@ -549,7 +567,7 @@ async fn persist_practice_attempt(
     Ok(())
 }
 
-// ── GET /student/practice/{quiz_id}/result 
+// ── GET /student/practice/{quiz_id}/result
 #[derive(Serialize)]
 struct ResultQuestion {
     number: i32,
@@ -587,7 +605,11 @@ pub async fn result(
         Ok(None) => return HttpResponse::NotFound().body("Quiz not found."),
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
     };
-    let course_id = course_id_for_quiz(db.get_ref(), quiz_id).await.ok().flatten().unwrap_or(0);
+    let course_id = course_id_for_quiz(db.get_ref(), quiz_id)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
 
     #[derive(FromRow)]
     struct AttemptRow {
@@ -662,7 +684,11 @@ pub async fn result(
 
     let total = attempt.total_marks.unwrap_or(0);
     let score = attempt.score.unwrap_or(0.0).round() as i32;
-    let percentage = if total > 0 { (score as f32 / total as f32 * 100.0).round() as i32 } else { 0 };
+    let percentage = if total > 0 {
+        (score as f32 / total as f32 * 100.0).round() as i32
+    } else {
+        0
+    };
 
     // Before/after proficiency move for THIS attempt (Step 3).
     #[derive(FromRow)]

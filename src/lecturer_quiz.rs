@@ -1,13 +1,17 @@
 use actix_session::Session;
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{HttpResponse, Responder, web};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgPool};
 use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
-fn default_difficulty() -> i16 { 1 }
-fn default_attempts() -> i32 { 1 }
+fn default_difficulty() -> i16 {
+    1
+}
+fn default_attempts() -> i32 {
+    1
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct OptionInput {
@@ -91,7 +95,6 @@ fn validate(input: &QuizInput) -> Result<i32, String> {
     }
     Ok(total)
 }
-
 
 // Display Structs
 
@@ -192,7 +195,10 @@ async fn quiz_owned(db: &PgPool, quiz_id: i32, lecturer_id: i32) -> Result<bool,
     Ok(found.is_some())
 }
 
-async fn lecturer_courses(db: &PgPool, lecturer_id: i32) -> Result<Vec<LecturerCourse>, sqlx::Error> {
+async fn lecturer_courses(
+    db: &PgPool,
+    lecturer_id: i32,
+) -> Result<Vec<LecturerCourse>, sqlx::Error> {
     sqlx::query_as::<_, LecturerCourse>(
         "SELECT id, course_code, course_name FROM courses WHERE lecturer_id = $1 ORDER BY course_code",
     )
@@ -301,7 +307,6 @@ async fn update_quiz(
     Ok(())
 }
 
-
 // Handlers
 fn base_ctx(ctx: &mut Context, display_name: &str) {
     ctx.insert("display_name", display_name);
@@ -320,7 +325,11 @@ fn render(tmpl: &Tera, name: &str, ctx: &Context) -> HttpResponse {
 }
 
 fn json_err(msg: &str) -> HttpResponse {
-    HttpResponse::BadRequest().json(ApiResult { ok: false, message: msg.into(), redirect: None })
+    HttpResponse::BadRequest().json(ApiResult {
+        ok: false,
+        message: msg.into(),
+        redirect: None,
+    })
 }
 
 // GET /lecturer/quizzes/manage
@@ -387,7 +396,9 @@ pub async fn new_form(
         Ok(None) => return HttpResponse::Forbidden().body("No lecturer record for this user."),
         Err(e) => return HttpResponse::InternalServerError().body(format!("DB error: {e}")),
     };
-    let courses = lecturer_courses(db.get_ref(), lecturer_id).await.unwrap_or_default();
+    let courses = lecturer_courses(db.get_ref(), lecturer_id)
+        .await
+        .unwrap_or_default();
 
     let mut ctx = Context::new();
     base_ctx(&mut ctx, &user.display_name);
@@ -485,7 +496,10 @@ pub async fn edit_form(
             topic: r.topic.unwrap_or_default(),
             options: opts
                 .into_iter()
-                .map(|o| EditOption { option_text: o.option_text, is_correct: o.is_correct })
+                .map(|o| EditOption {
+                    option_text: o.option_text,
+                    is_correct: o.is_correct,
+                })
                 .collect(),
         });
     }
@@ -502,12 +516,17 @@ pub async fn edit_form(
         is_practice: head.is_practice,
         questions,
     };
-    let courses = lecturer_courses(db.get_ref(), lecturer_id).await.unwrap_or_default();
+    let courses = lecturer_courses(db.get_ref(), lecturer_id)
+        .await
+        .unwrap_or_default();
 
     let mut ctx = Context::new();
     base_ctx(&mut ctx, &user.display_name);
     ctx.insert("mode", "edit");
-    ctx.insert("form_action", &format!("/lecturer/quizzes/manage/{quiz_id}"));
+    ctx.insert(
+        "form_action",
+        &format!("/lecturer/quizzes/manage/{quiz_id}"),
+    );
     ctx.insert("courses", &courses);
     ctx.insert("quiz", &edit); // template serialises with json_encode()
     render(&tmpl, "lecturer/quiz_form.html", &ctx)
@@ -702,30 +721,73 @@ pub fn config(cfg: &mut web::ServiceConfig) {
     cfg.route("/lecturer/quizzes/manage", web::get().to(manage_list))
         .route("/lecturer/quizzes/manage", web::post().to(create))
         .route("/lecturer/quizzes/manage/new", web::get().to(new_form))
-        .route("/lecturer/quizzes/manage/{id}/edit", web::get().to(edit_form))
-        .route("/lecturer/quizzes/manage/{id}/results", web::get().to(results))
-        .route("/lecturer/quizzes/manage/{id}/delete", web::post().to(delete))       
+        .route(
+            "/lecturer/quizzes/manage/{id}/edit",
+            web::get().to(edit_form),
+        )
+        .route(
+            "/lecturer/quizzes/manage/{id}/results",
+            web::get().to(results),
+        )
+        .route(
+            "/lecturer/quizzes/manage/{id}/delete",
+            web::post().to(delete),
+        )
         .route("/lecturer/quizzes/manage/{id}", web::post().to(update));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn opt(t: &str, c: bool) -> OptionInput { OptionInput { option_text: t.into(), is_correct: c } }
+    fn opt(t: &str, c: bool) -> OptionInput {
+        OptionInput {
+            option_text: t.into(),
+            is_correct: c,
+        }
+    }
     fn q() -> QuestionInput {
-        QuestionInput { question_text: "2+2?".into(), question_type: "multiple_choice".into(), marks: 5,
-            difficulty: 1, topic: None,
-            options: vec![opt("4", true), opt("5", false)] }
+        QuestionInput {
+            question_text: "2+2?".into(),
+            question_type: "multiple_choice".into(),
+            marks: 5,
+            difficulty: 1,
+            topic: None,
+            options: vec![opt("4", true), opt("5", false)],
+        }
     }
     fn base() -> QuizInput {
-        QuizInput { course_id: 1, title: "Q1".into(), description: None,
-            open_at: "2026-06-20T10:00".into(), close_at: "2026-06-21T10:00".into(),
-            serve_count: None, attempts_allowed: 1, is_practice: false, questions: vec![q()] }
+        QuizInput {
+            course_id: 1,
+            title: "Q1".into(),
+            description: None,
+            open_at: "2026-06-20T10:00".into(),
+            close_at: "2026-06-21T10:00".into(),
+            serve_count: None,
+            attempts_allowed: 1,
+            is_practice: false,
+            questions: vec![q()],
+        }
     }
-    #[test] fn totals() { let mut x = base(); x.questions.push(q()); assert_eq!(validate(&x).unwrap(), 10); }
-    #[test] fn empty_title() { let mut x = base(); x.title = " ".into(); assert!(validate(&x).is_err()); }
-    #[test] fn no_q() { let mut x = base(); x.questions.clear(); assert!(validate(&x).is_err()); }
-    #[test] fn correct_count() {
+    #[test]
+    fn totals() {
+        let mut x = base();
+        x.questions.push(q());
+        assert_eq!(validate(&x).unwrap(), 10);
+    }
+    #[test]
+    fn empty_title() {
+        let mut x = base();
+        x.title = " ".into();
+        assert!(validate(&x).is_err());
+    }
+    #[test]
+    fn no_q() {
+        let mut x = base();
+        x.questions.clear();
+        assert!(validate(&x).is_err());
+    }
+    #[test]
+    fn correct_count() {
         let mut x = base();
         x.questions[0].options = vec![opt("a", true), opt("b", true)];
         assert!(validate(&x).is_err());
