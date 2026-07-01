@@ -23,6 +23,10 @@ cargo run
 
 - Admin: `admin@lms.test` / `Password123!`
 
+User management
+
+New users can be created through the admin account once the app is running. You can also log in using any existing user already present in the Supabase database.
+
 Notes
 
 - Database migrations and seed scripts are stored in the `sql/` directory.
