@@ -11,9 +11,11 @@ use tera::{Context, Tera};
 use crate::admin::{AuditActor, log_audit_event};
 use crate::auth::UserRole;
 
+// Forum upload limits keep attachments small and predictable.
 const MAX_ATTACHMENTS_PER_ITEM: usize = 3;
 const MAX_ATTACHMENT_BYTES: usize = 5 * 1024 * 1024;
 
+// Shared moderation form used for forum content actions.
 #[derive(Deserialize)]
 pub struct DeleteForm {
     reason: Option<String>,

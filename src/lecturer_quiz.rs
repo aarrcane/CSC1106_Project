@@ -6,6 +6,7 @@ use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
+// Default quiz builder values used when the form omits optional fields.
 fn default_difficulty() -> i16 {
     1
 }

@@ -8,7 +8,8 @@ use tera::{Context, Tera};
 use crate::auth::UserRole;
 use crate::quiz_engine;
 
-const EWMA_ALPHA: f32 = 0.3; // learning rate, matches the graded engine
+// Practice quiz tuning uses a small EWMA alpha so proficiency updates gently over time.
+const EWMA_ALPHA: f32 = 0.3;
 
 // ── DB helpers ──────────────────────────────────────────────────────────────
 
@@ -98,7 +99,7 @@ fn level_for(p: f32) -> &'static str {
     }
 }
 
-// Create a practice attempt: pick a difficulty-targeted subset from the bank, freeze it, return attempt id.
+// Create a practice attempt by selecting a difficulty-targeted subset of questions and freezing it.
 async fn create_practice_attempt(
     db: &PgPool,
     quiz_id: i32,

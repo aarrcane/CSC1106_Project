@@ -41,6 +41,7 @@ pub struct UserPreferencesForm {
     theme_mode: String,
 }
 
+// Ensure the lecturer preference table exists before loading or saving settings.
 async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS user_preferences (
@@ -83,7 +84,7 @@ async fn load_user_preferences(
     .await
 }
 
-// ─── helper: get lecturer row from session ───────────────────────────────────
+// Resolve the current lecturer identity from the session and database.
 async fn get_lecturer(
     session: &Session,
     db: &PgPool,
@@ -103,7 +104,7 @@ async fn get_lecturer(
     Ok((user, row.id))
 }
 
-// ─── base context helper ─────────────────────────────────────────────────────
+// Build a shared Tera context for lecturer pages and highlight the active navigation item.
 fn base_ctx(user: &crate::auth::CurrentUser, active: &str) -> Context {
     let mut ctx = Context::new();
     ctx.insert("display_name", &user.display_name);

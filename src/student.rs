@@ -38,6 +38,7 @@ pub struct UserPreferencesForm {
     theme_mode: String,
 }
 
+// Ensure per-user preference rows exist before loading or updating them.
 async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS user_preferences (
@@ -80,6 +81,7 @@ async fn load_user_preferences(
     .await
 }
 
+// Render the student dashboard with course, grade, and attendance summary data.
 pub async fn student_dashboard(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,

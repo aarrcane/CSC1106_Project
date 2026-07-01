@@ -7,6 +7,7 @@ use tera::{Context, Tera};
 
 use crate::admin::{AuditActor, log_audit_event};
 
+// Session keys used across the authentication flow.
 const SESSION_USER_ID: &str = "user_id";
 const SESSION_ROLE: &str = "role";
 const SESSION_DISPLAY_NAME: &str = "display_name";
@@ -82,6 +83,7 @@ pub struct CurrentUser {
     pub display_name: String,
 }
 
+// Handle login requests, verify credentials, and create the user's session.
 pub async fn login_submit(
     tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,

@@ -8,6 +8,7 @@ use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
+// Attendance workflow constants shared by lecturer and student handlers.
 const LATE_AFTER_MINUTES: i32 = 10;
 const FLASH_SUCCESS: &str = "attendance_success";
 const FLASH_ERROR: &str = "attendance_error";
@@ -18,6 +19,7 @@ pub struct CreateSessionForm {
     session_title: String,
 }
 
+// Student attendance check-in form.
 #[derive(Deserialize)]
 pub struct CheckInForm {
     code: String,

@@ -146,6 +146,7 @@ pub struct AdminPreferencesForm {
     pub theme_mode: String,
 }
 
+// Ensure the per-user preference table exists before loading or saving settings.
 async fn ensure_user_preferences_table(db: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS user_preferences (
@@ -188,6 +189,7 @@ async fn load_user_preferences(
     .await
 }
 
+// Shared template context for admin pages, including the student-style variables used by the shared layout.
 fn set_admin_base(ctx: &mut Context, user: &crate::auth::CurrentUser, active_page: &str) {
     ctx.insert("display_name", &user.display_name);
     ctx.insert("student_name", &user.display_name);
@@ -302,6 +304,7 @@ pub async fn admin_users_page(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+// Create a new student or lecturer account and assign a temporary password for first login.
 pub async fn admin_create_user(
     _tmpl: web::Data<Tera>,
     db: web::Data<PgPool>,
@@ -506,6 +509,7 @@ pub async fn admin_create_user(
         .finish()
 }
 
+// Toggle a user's active state while preventing the signed-in admin from disabling their own account.
 pub async fn admin_toggle_user_active(
     db: web::Data<PgPool>,
     session: Session,
@@ -1076,6 +1080,7 @@ pub async fn admin_content_page(
     HttpResponse::Ok().content_type("text/html").body(rendered)
 }
 
+// Admin forum moderation actions are routed through a small action switch for threads.
 pub async fn admin_moderate_forum_thread(
     path: web::Path<(i32, String)>,
     db: web::Data<PgPool>,
@@ -1817,6 +1822,7 @@ pub struct CreateCourseForm {
     pub lecturer_id: Option<i32>,
 }
 
+// Lightweight JSON endpoints used by the admin UI for course management.
 pub async fn create_course(
     form: web::Json<CreateCourseForm>,
     db: web::Data<PgPool>,

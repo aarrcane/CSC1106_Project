@@ -9,6 +9,7 @@ pub struct SupabaseStorage {
 }
 
 impl SupabaseStorage {
+    // Build the storage client from the current environment configuration.
     pub fn from_env() -> Self {
         let base_url = std::env::var("SUPABASE_URL").unwrap_or_else(|_| {
             eprintln!("SUPABASE_URL not found");

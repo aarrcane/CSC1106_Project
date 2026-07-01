@@ -6,7 +6,7 @@ use tera::{Context, Tera};
 
 use crate::auth::UserRole;
 
-// Fixed default quiz timing
+// Fixed default quiz timing used by student quiz pages.
 const QUIZ_DURATION_MINS: i32 = 30;
 
 // Attempts allowed is configured per-quiz (quizzes.attempts_allowed).
@@ -93,7 +93,7 @@ async fn in_progress_attempt(
     .await
 }
 
-// Start a new attempt: freeze a proficiency-targeted question subset; returns the attempt id, or None if no questions.
+// Start a new quiz attempt by freezing a balanced question subset for the student.
 async fn create_attempt_with_subset(
     db: &PgPool,
     quiz_id: i32,

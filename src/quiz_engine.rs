@@ -68,7 +68,7 @@ pub struct MaterialRecommendation {
     pub topic: Option<String>,
 }
 
-// Pure engine logic
+// Core quiz engine logic shared by the practice and graded quiz flows.
 
 // Grade a single answer against its question's options.
 // Quizzes are option-based only (multiple_choice / true_false).
